@@ -1,6 +1,7 @@
 ﻿using Core.Contracts;
 using Core.Models;
 using YoutubeDLSharp;
+using YoutubeDLSharp.Options;
 
 namespace Infrastructure
 {
@@ -27,11 +28,32 @@ namespace Infrastructure
             ytdl.YoutubeDLPath = ytdlpBin;
             ytdl.FFmpegPath = ffmpegBin;
 
-            string folderPath = GetDirectory(); 
+            string folderPath = GetDirectory();
+
             var video = await ytdl.RunVideoDataFetch(videoUrl);
             string title = video.Data.Title;
             string description = video.Data.Description;
-            string outputFilePath = Path.Combine(folderPath, $"{title}.mp4");
+
+            ytdl.OutputFolder = folderPath;
+
+            var options = new OptionSet()
+            {
+                Output = Path.Combine(folderPath, "audio.%(ext)s")
+            };
+
+            var downloadResult = await ytdl.RunAudioDownload(
+                videoUrl,
+                AudioConversionFormat.Mp3,
+                overrideOptions: options
+            );
+
+            if (!downloadResult.Success)
+            {
+                string errorDetails = string.Join(Environment.NewLine, downloadResult.ErrorOutput);
+                throw new Exception($"Не удалось скачать аудио. Ошибка: {errorDetails}");
+            }
+
+            string outputFilePath = downloadResult.Data;
 
             return new ViewMetadata
             {
