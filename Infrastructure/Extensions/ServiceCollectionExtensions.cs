@@ -1,6 +1,6 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Infrastructure.Providers;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.SemanticKernel;
 
 namespace Infrastructure.Extensions
 {
@@ -8,34 +8,27 @@ namespace Infrastructure.Extensions
     {
         public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
         {
-            services.AddLlmServices(configuration);
+            services.AddKernelWithProvider(configuration);
 
             services.AddTransient<YouTubeDownloader>();
             services.AddTransient<WhisperTranscriber>();
             services.AddTransient<RecipeParser>();
+            services.AddTransient<LlmService>();
 
             return services;
         }
 
-        private static IServiceCollection AddLlmServices(this IServiceCollection services, IConfiguration configuration)
+        private static IServiceCollection AddKernelWithProvider(this IServiceCollection services, IConfiguration config)
         {
-            var apiKey = configuration["ApiKeys:Groq"] ?? "ollama";
+            string providerName = config["LLM:Provider"] ?? "OpenAI";
 
-            var handler = new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(10) };
-            var httpClient = new HttpClient(handler)
+            ILLMProvider provider = providerName switch
             {
-                BaseAddress = new Uri("https://api.groq.com/openai/v1/"),
-                Timeout = TimeSpan.FromMinutes(5)
+                "OpenAI" => new OpenAiProvider(),
+                _ => throw new InvalidOperationException($"Неизвестный LLM-провайдер: {providerName}.")
             };
 
-            services.AddKernel()
-                .AddOpenAIChatCompletion(
-                    modelId: "openai/gpt-oss-20b",
-                    apiKey: apiKey,
-                    httpClient: httpClient
-                );
-
-            services.AddTransient<LlmService>();
+            provider.Register(services, config);
 
             return services;
         }
