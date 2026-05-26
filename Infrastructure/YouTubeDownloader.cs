@@ -5,7 +5,7 @@ using YoutubeDLSharp.Options;
 
 namespace Infrastructure
 {
-    public class YouTubeDownloader : IYouTubeDownloader
+    public class YouTubeDownloader : IVideoDownloader
     {
         public async Task<ViewMetadata> DownloadAudioAsync(string videoUrl)
         {

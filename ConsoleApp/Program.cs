@@ -1,9 +1,11 @@
-﻿using Core.Contracts;
+﻿using Core.Models;
 using Infrastructure;
-using System;
+using Infrastructure.Extensions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
-Console.WriteLine("=== RecipeScrebe запущен ===");
-Console.WriteLine("Введите ссылку с рецептом:");
+Console.WriteLine("RecipeScribe");
+Console.Write("Введите ссылку с рецептом: ");
 string? url = Console.ReadLine();
 
 if (string.IsNullOrWhiteSpace(url))
@@ -12,27 +14,44 @@ if (string.IsNullOrWhiteSpace(url))
     return;
 }
 
+var configuration = new ConfigurationBuilder()
+    .AddUserSecrets<Program>()
+    .Build();
+
+var serviceProvider = new ServiceCollection()
+    .AddInfrastructureServices(configuration) 
+    .BuildServiceProvider();
+
 try
 {
-    IYouTubeDownloader downloader = new YouTubeDownloader();
+    var downloader = serviceProvider.GetRequiredService<YouTubeDownloader>();
+    var transcriber = serviceProvider.GetRequiredService<WhisperTranscriber>();
+    var parser = serviceProvider.GetRequiredService<RecipeParser>();
+
+    Console.WriteLine("Начинаю загрузку видео...");
     var metadata = await downloader.DownloadAudioAsync(url);
-    Console.WriteLine("\n=== Успешно загружено! ===");
+
+    Console.WriteLine($"\nВидео успешно загружено.");
     Console.WriteLine($"Название: {metadata.Title}");
-    Console.WriteLine($"Путь к файлу: {metadata.AudioFilePath}");
 
-    ITranscriber transcriber = new WhisperTranscriber();
     string transcript = await transcriber.TranscribeAsync(metadata.AudioFilePath);
+    Recipe recipe = await parser.ParseRecipeAsync(transcript);
+    Console.WriteLine($"РЕЦЕПТ: {recipe.Title.ToUpper()}");
+    Console.WriteLine("\nИНГРЕДИЕНТЫ:");
+    
+    foreach (var ingredient in recipe.Ingredients)
+    {
+        string amountText = string.IsNullOrWhiteSpace(ingredient.Amount) ? "" : $" — {ingredient.Amount}";
+        Console.WriteLine($"  • {ingredient.Name}{amountText}");
+    }
 
-    Console.WriteLine("\n=== Текст успешно распознан! ===");
-    Console.WriteLine(transcript);
-
+    Console.WriteLine("\nШАГИ ПРИГОТОВЛЕНИЯ:");
+    foreach (var step in recipe.Steps)
+    {
+        Console.WriteLine($"  {step.Number}. {step.Description}");
+    }
 }
 catch (Exception ex)
 {
-    Console.WriteLine($" Произошла ошибка: {ex.Message}");
-
-    if (ex.InnerException != null)
-    {
-        Console.WriteLine($"Детали: {ex.InnerException.Message}");
-    }
+    Console.WriteLine($"\n Произошла ошибка: {ex.Message}");
 }

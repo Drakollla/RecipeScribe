@@ -2,7 +2,7 @@
 
 namespace Core.Contracts
 {
-    public interface IYouTubeDownloader
+    public interface IVideoDownloader
     {
         Task<ViewMetadata> DownloadAudioAsync(string videoUrl);
     }
