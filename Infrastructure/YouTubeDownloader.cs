@@ -32,6 +32,10 @@ namespace Infrastructure
             string folderPath = GetDirectory();
 
             var video = await ytdl.RunVideoDataFetch(videoUrl);
+            if (!video.Success)
+                throw new RecipeScribeException(ErrorType.VideoNotFound,
+                    $"Не удалось получить данные о видео: {string.Join("; ", video.ErrorOutput)}");
+
             string title = video.Data.Title;
             string description = video.Data.Description;
 
@@ -51,7 +55,8 @@ namespace Infrastructure
             if (!downloadResult.Success)
             {
                 string errorDetails = string.Join(Environment.NewLine, downloadResult.ErrorOutput);
-                throw new Exception($"Не удалось скачать аудио. Ошибка: {errorDetails}");
+                throw new RecipeScribeException(ErrorType.Network,
+                    $"Не удалось скачать аудио. Ошибка: {errorDetails}");
             }
 
             string outputFilePath = downloadResult.Data;
@@ -89,10 +94,18 @@ namespace Infrastructure
             };
 
             using var process = Process.Start(startInfo);
-            if (process == null) return null;
+            if (process == null)
+                throw new RecipeScribeException(ErrorType.Network, "Не удалось запустить yt-dlp для получения комментариев");
 
             string output = await process.StandardOutput.ReadToEndAsync();
             await process.WaitForExitAsync();
+
+            if (process.ExitCode != 0)
+            {
+                string error = await process.StandardError.ReadToEndAsync();
+                throw new RecipeScribeException(ErrorType.VideoNotFound,
+                    $"yt-dlp не смог получить комментарии: {error}");
+            }
 
             return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
         }

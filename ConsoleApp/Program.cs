@@ -3,6 +3,12 @@ using Core.Models;
 using Infrastructure.Extensions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Serilog;
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .WriteTo.Console(outputTemplate: "[{Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
 
 Console.WriteLine("RecipeScribe");
 Console.Write("Введите ссылку с рецептом: ");
@@ -15,13 +21,14 @@ if (string.IsNullOrWhiteSpace(url))
 }
 
 var configuration = new ConfigurationBuilder()
-    .SetBasePath(AppContext.BaseDirectory) 
+    .SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
     .AddUserSecrets<Program>()
     .Build();
 
 var serviceProvider = new ServiceCollection()
-    .AddInfrastructureServices(configuration) 
+    .AddInfrastructureServices(configuration)
+    .AddLogging(builder => builder.AddSerilog(dispose: true))
     .BuildServiceProvider();
 
 try
@@ -67,7 +74,7 @@ try
 
     Console.WriteLine($"РЕЦЕПТ: {recipe.Title.ToUpper()}");
     Console.WriteLine("\nИНГРЕДИЕНТЫ:");
-    
+
     foreach (var ingredient in recipe.Ingredients)
     {
         string amountText = string.IsNullOrWhiteSpace(ingredient.Amount) ? "" : $" — {ingredient.Amount}";
@@ -80,7 +87,21 @@ try
         Console.WriteLine($"  {step.Number}. {step.Description}");
     }
 }
+catch (RecipeScribeException ex)
+{
+    string msg = ex.Type switch
+    {
+        ErrorType.Network => "Нет соединения или видео недоступно",
+        ErrorType.VideoNotFound => "Видео не найдено или недоступно",
+        ErrorType.LlmFailure => "Не удалось распарсить рецепт (ошибка ИИ)",
+        ErrorType.ParseError => "Ответ от ИИ не содержит корректный рецепт",
+        ErrorType.TranscriptionFailed => "Не удалось распознать аудио",
+        _ => "Неизвестная ошибка"
+    };
+    Console.WriteLine($"\nОшибка: {msg}");
+    Console.WriteLine($"Детали: {ex.Message}");
+}
 catch (Exception ex)
 {
-    Console.WriteLine($"\n Произошла ошибка: {ex.Message}");
+    Console.WriteLine($"\nНеожиданная ошибка: {ex.Message}");
 }

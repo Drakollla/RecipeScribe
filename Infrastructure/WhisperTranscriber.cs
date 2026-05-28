@@ -1,4 +1,5 @@
 ﻿using Core.Contracts;
+using Core.Models;
 using System.Diagnostics;
 using System.Text;
 using Whisper.net;
@@ -37,7 +38,15 @@ namespace Infrastructure
             });
 
             if (ffmpegProcess != null)
+            {
                 await ffmpegProcess.WaitForExitAsync();
+                if (ffmpegProcess.ExitCode != 0)
+                {
+                    string error = await ffmpegProcess.StandardError.ReadToEndAsync();
+                    throw new RecipeScribeException(ErrorType.TranscriptionFailed,
+                        $"ffmpeg не смог конвертировать аудио: {error}");
+                }
+            }
 
             Console.WriteLine("Начиналось распознавание речи (это может занять некоторое время)...");
 
