@@ -9,16 +9,20 @@ namespace Infrastructure
 {
     public class WhisperTranscriber : ITranscriber
     {
-        private const string ModelName = "ggml-base.bin";
+        private static readonly string ModelsDir = Path.GetFullPath(
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Core", "Whisper"));
+        private static readonly string ModelPath = Path.Combine(ModelsDir, "ggml-base.bin");
 
         public async Task<string> TranscribeAsync(string audioFilePath)
         {
-            if (!File.Exists(ModelName))
+            Directory.CreateDirectory(ModelsDir);
+
+            if (!File.Exists(ModelPath))
             {
                 Console.WriteLine("Модель для транскрипции (ggml-base.bin) не найдена. Скачиваю...");
 
                 using var modelStream = await WhisperGgmlDownloader.Default.GetGgmlModelAsync(GgmlType.Base);
-                using var fileWriter = File.OpenWrite(ModelName);
+                using var fileWriter = File.OpenWrite(ModelPath);
 
                 await modelStream.CopyToAsync(fileWriter);
                 Console.WriteLine("Модель успешно загружена.");
@@ -52,7 +56,7 @@ namespace Infrastructure
 
             var resultText = new StringBuilder();
 
-            using (var whisperFactory = WhisperFactory.FromPath(ModelName))
+            using (var whisperFactory = WhisperFactory.FromPath(ModelPath))
             using (var processor = whisperFactory.CreateBuilder().WithLanguage("auto").Build())
             using (var fileStream = File.OpenRead(wavPath))
             {
