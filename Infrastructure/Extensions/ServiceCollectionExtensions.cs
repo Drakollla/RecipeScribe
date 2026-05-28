@@ -1,4 +1,6 @@
-﻿using Infrastructure.Providers;
+﻿using Core.Contracts;
+using Infrastructure.Providers;
+using Infrastructure.Settings;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -8,12 +10,14 @@ namespace Infrastructure.Extensions
     {
         public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
         {
+            var llmSettings = configuration.GetSection("LlmSettings").Get<LlmSettings>() ?? new LlmSettings();
+            services.AddSingleton(llmSettings);
+
             services.AddKernelWithProvider(configuration);
 
-            services.AddTransient<YouTubeDownloader>();
-            services.AddTransient<WhisperTranscriber>();
-            services.AddTransient<RecipeParser>();
-            services.AddTransient<LlmService>();
+            services.AddTransient<IVideoDownloader, YouTubeDownloader>();
+            services.AddTransient<ITranscriber, WhisperTranscriber>();
+            services.AddTransient<IRecipeParser, RecipeParser>();
 
             return services;
         }

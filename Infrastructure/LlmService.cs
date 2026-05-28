@@ -3,7 +3,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Infrastructure
 {
-    public class LlmService
+    internal class LlmService
     {
         private readonly Kernel _kernel;
 
@@ -18,7 +18,6 @@ namespace Infrastructure
 
             var history = new ChatHistory();
             history.AddUserMessage(prompt);
-
             var response = await chatService.GetChatMessageContentAsync(history, null, _kernel);
             return response.Content ?? string.Empty;
         }

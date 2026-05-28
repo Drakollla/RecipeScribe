@@ -1,5 +1,6 @@
 ﻿using Core.Contracts;
 using Core.Models;
+using System.Diagnostics;
 using YoutubeDLSharp;
 using YoutubeDLSharp.Options;
 
@@ -70,6 +71,30 @@ namespace Infrastructure
             Directory.CreateDirectory(folderPath);
 
             return folderPath;
+        }
+
+        public async Task<string?> GetFirstCommentAsync(string videoUrl)
+        {
+            string ytdlpBin = OperatingSystem.IsWindows() ? "yt-dlp.exe" : "yt-dlp";
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = ytdlpBin,
+                Arguments = $"--get-comments --extractor-args \"youtube:max-comments=1\" --print \"%(comments.0.text)s\" --skip-download --encoding utf-8 \"{videoUrl}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process == null) return null;
+
+            string output = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
         }
     }
 }

@@ -1,5 +1,5 @@
-﻿using Core.Models;
-using Infrastructure;
+﻿using Core.Contracts;
+using Core.Models;
 using Infrastructure.Extensions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,9 +26,9 @@ var serviceProvider = new ServiceCollection()
 
 try
 {
-    var downloader = serviceProvider.GetRequiredService<YouTubeDownloader>();
-    var transcriber = serviceProvider.GetRequiredService<WhisperTranscriber>();
-    var parser = serviceProvider.GetRequiredService<RecipeParser>();
+    var downloader = serviceProvider.GetRequiredService<IVideoDownloader>();
+    var transcriber = serviceProvider.GetRequiredService<ITranscriber>();
+    var parser = serviceProvider.GetRequiredService<IRecipeParser>();
 
     Console.WriteLine("Начинаю загрузку видео...");
     var metadata = await downloader.DownloadAudioAsync(url);
@@ -36,8 +36,35 @@ try
     Console.WriteLine($"\nВидео успешно загружено.");
     Console.WriteLine($"Название: {metadata.Title}");
 
-    string transcript = await transcriber.TranscribeAsync(metadata.AudioFilePath);
-    Recipe recipe = await parser.ParseRecipeAsync(transcript);
+    Recipe? recipe = null;
+
+    if (!string.IsNullOrWhiteSpace(metadata.Description) && metadata.Description.Length > 100)
+    {
+        Console.WriteLine("\n[Быстрый путь 1] Пробую распарсить рецепт из описания...");
+        recipe = await parser.ParseRecipeAsync(metadata.Description);
+    }
+
+    if (recipe == null || recipe.Ingredients.Count == 0 || recipe.Title == "Нет рецепта" || recipe.Title == "Ошибка парсинга JSON")
+    {
+        Console.WriteLine("\n[Быстрый путь 2] Проверяю закрепленный комментарий...");
+
+        string? firstComment = await downloader.GetFirstCommentAsync(url);
+
+        if (!string.IsNullOrWhiteSpace(firstComment))
+        {
+            Console.WriteLine("Нашелся комментарий! Пробую распарсить...");
+            recipe = await parser.ParseRecipeAsync(firstComment);
+        }
+    }
+
+    if (recipe == null || recipe.Ingredients.Count == 0 || recipe.Title == "Нет рецепта" || recipe.Title == "Ошибка парсинга JSON")
+    {
+        Console.WriteLine("\n[Медленный путь] Текст не найден. Запускаю транскрибацию...");
+
+        string transcript = await transcriber.TranscribeAsync(metadata.AudioFilePath);
+        recipe = await parser.ParseRecipeAsync(transcript);
+    }
+
     Console.WriteLine($"РЕЦЕПТ: {recipe.Title.ToUpper()}");
     Console.WriteLine("\nИНГРЕДИЕНТЫ:");
     
