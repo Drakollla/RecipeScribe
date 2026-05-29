@@ -11,14 +11,6 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 
 Console.WriteLine("RecipeScribe");
-Console.Write("Введите ссылку с рецептом: ");
-string? url = Console.ReadLine();
-
-if (string.IsNullOrWhiteSpace(url))
-{
-    Console.WriteLine("Ошибка: Ссылка не может быть пустой.");
-    return;
-}
 
 var configuration = new ConfigurationBuilder()
     .SetBasePath(AppContext.BaseDirectory)
@@ -31,14 +23,25 @@ var serviceProvider = new ServiceCollection()
     .AddLogging(builder => builder.AddSerilog(dispose: true))
     .BuildServiceProvider();
 
-try
+while (true)
 {
-    var downloader = serviceProvider.GetRequiredService<IVideoDownloader>();
-    var transcriber = serviceProvider.GetRequiredService<ITranscriber>();
-    var parser = serviceProvider.GetRequiredService<IRecipeParser>();
+    Console.Write("\nВведите ссылку с рецептом (или оставьте пустым для выхода): ");
+    string? url = Console.ReadLine();
 
-    Console.WriteLine("Начинаю загрузку видео...");
-    var metadata = await downloader.DownloadAudioAsync(url);
+    if (string.IsNullOrWhiteSpace(url))
+    {
+        Console.WriteLine("До свидания!");
+        return;
+    }
+
+    try
+    {
+        var downloader = serviceProvider.GetRequiredService<IVideoDownloader>();
+        var transcriber = serviceProvider.GetRequiredService<ITranscriber>();
+        var parser = serviceProvider.GetRequiredService<IRecipeParser>();
+
+        Console.WriteLine("Начинаю загрузку видео...");
+        var metadata = await downloader.DownloadAudioAsync(url);
 
     Console.WriteLine($"\nВидео успешно загружено.");
     Console.WriteLine($"Название: {metadata.Title}");
@@ -104,4 +107,5 @@ catch (RecipeScribeException ex)
 catch (Exception ex)
 {
     Console.WriteLine($"\nНеожиданная ошибка: {ex.Message}");
+}
 }
