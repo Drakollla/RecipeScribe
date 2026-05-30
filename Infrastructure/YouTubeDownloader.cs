@@ -8,83 +8,59 @@ namespace Infrastructure
 {
     public class YouTubeDownloader : IVideoDownloader
     {
+        private static readonly string ToolsDir = Path.GetFullPath(
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Core", "Tools"));
+        private static readonly string YtdlpPath = Path.Combine(ToolsDir, BinaryName("yt-dlp"));
+        private static readonly string FfmpegPath = Path.Combine(ToolsDir, BinaryName("ffmpeg"));
+        private static readonly string AudioDir = Path.Combine(AppContext.BaseDirectory, "DownloadedAudio");
+
         public async Task<ViewMetadata> DownloadAudioAsync(string videoUrl)
         {
-            string ytdlpBin = OperatingSystem.IsWindows() ? "yt-dlp.exe" : "yt-dlp";
-            string ffmpegBin = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
+            await EnsureBinariesAsync();
 
-            if (!File.Exists(ytdlpBin))
+            CleanDirectory(AudioDir);
+
+            var ytdl = new YoutubeDL
             {
-                Console.WriteLine("Компонент скачивания (yt-dlp) не найден. Скачиваю...");
-                await Utils.DownloadYtDlp();
-            }
-
-            if (!File.Exists(ffmpegBin))
-            {
-                Console.WriteLine("Аудио-конвертер (ffmpeg) не найден. Скачиваю...");
-                await Utils.DownloadFFmpeg();
-            }
-
-            var ytdl = new YoutubeDL();
-            ytdl.YoutubeDLPath = ytdlpBin;
-            ytdl.FFmpegPath = ffmpegBin;
-
-            string folderPath = GetDirectory();
+                YoutubeDLPath = YtdlpPath,
+                FFmpegPath = FfmpegPath,
+                OutputFolder = AudioDir
+            };
 
             var video = await ytdl.RunVideoDataFetch(videoUrl);
+            
             if (!video.Success)
-                throw new RecipeScribeException(ErrorType.VideoNotFound,
-                    $"Не удалось получить данные о видео: {string.Join("; ", video.ErrorOutput)}");
+                throw new RecipeScribeException(ErrorType.VideoNotFound,$"Не удалось получить данные о видео: {string.Join("; ", video.ErrorOutput)}");
 
-            string title = video.Data.Title;
-            string description = video.Data.Description;
-
-            ytdl.OutputFolder = folderPath;
-
-            var options = new OptionSet()
+            var options = new OptionSet
             {
-                Output = Path.Combine(folderPath, "audio.%(ext)s")
+                Output = Path.Combine(AudioDir, "audio.%(ext)s")
             };
 
             var downloadResult = await ytdl.RunAudioDownload(
-                videoUrl,
-                AudioConversionFormat.Mp3,
-                overrideOptions: options
-            );
+                videoUrl, AudioConversionFormat.Mp3, overrideOptions: options);
 
             if (!downloadResult.Success)
             {
                 string errorDetails = string.Join(Environment.NewLine, downloadResult.ErrorOutput);
-                throw new RecipeScribeException(ErrorType.Network,
-                    $"Не удалось скачать аудио. Ошибка: {errorDetails}");
+                throw new RecipeScribeException(ErrorType.Network,$"Не удалось скачать аудио. Ошибка: {errorDetails}");
             }
-
-            string outputFilePath = downloadResult.Data;
 
             return new ViewMetadata
             {
-                Title = title,
-                Description = description,
-                AudioFilePath = outputFilePath
+                Title = video.Data.Title,
+                Description = video.Data.Description,
+                AudioFilePath = downloadResult.Data
             };
-        }
-
-        private string GetDirectory()
-        {
-            string exeDir = AppDomain.CurrentDomain.BaseDirectory;
-            string folderPath = Path.Combine(exeDir, "DownloadedAudio");
-            Directory.CreateDirectory(folderPath);
-
-            return folderPath;
         }
 
         public async Task<string?> GetFirstCommentAsync(string videoUrl)
         {
-            string ytdlpBin = OperatingSystem.IsWindows() ? "yt-dlp.exe" : "yt-dlp";
+            await EnsureBinariesAsync();
 
             var startInfo = new ProcessStartInfo
             {
-                FileName = ytdlpBin,
+                FileName = YtdlpPath,
                 Arguments = $"--get-comments --extractor-args \"youtube:max-comments=1\" --print \"%(comments.0.text)s\" --skip-download --encoding utf-8 \"{videoUrl}\"",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -94,6 +70,7 @@ namespace Infrastructure
             };
 
             using var process = Process.Start(startInfo);
+
             if (process == null)
                 throw new RecipeScribeException(ErrorType.Network, "Не удалось запустить yt-dlp для получения комментариев");
 
@@ -109,5 +86,38 @@ namespace Infrastructure
 
             return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
         }
+
+        private static async Task EnsureBinariesAsync()
+        {
+            Directory.CreateDirectory(ToolsDir);
+
+            if (!File.Exists(YtdlpPath))
+            {
+                Console.WriteLine("yt-dlp не найден. Скачиваю...");
+                await Utils.DownloadYtDlp(YtdlpPath);
+            }
+
+            if (!File.Exists(FfmpegPath))
+            {
+                Console.WriteLine("ffmpeg не найден. Скачиваю...");
+                await Utils.DownloadFFmpeg(FfmpegPath);
+            }
+        }
+
+        private static void CleanDirectory(string path)
+        {
+            if (Directory.Exists(path))
+            {
+                foreach (var file in Directory.GetFiles(path))
+                    File.Delete(file);
+            }
+            else
+            {
+                Directory.CreateDirectory(path);
+            }
+        }
+
+        private static string BinaryName(string name) =>
+            OperatingSystem.IsWindows() ? $"{name}.exe" : name;
     }
 }
