@@ -94,13 +94,13 @@ namespace Infrastructure
             if (!File.Exists(YtdlpPath))
             {
                 Console.WriteLine("yt-dlp не найден. Скачиваю...");
-                await Utils.DownloadYtDlp(YtdlpPath);
+                await Utils.DownloadYtDlp(ToolsDir);
             }
 
             if (!File.Exists(FfmpegPath))
             {
                 Console.WriteLine("ffmpeg не найден. Скачиваю...");
-                await Utils.DownloadFFmpeg(FfmpegPath);
+                await Utils.DownloadFFmpeg(ToolsDir);
             }
         }
 
