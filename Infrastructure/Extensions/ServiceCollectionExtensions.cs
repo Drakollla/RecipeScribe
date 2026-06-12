@@ -1,4 +1,5 @@
 ﻿using Core.Contracts;
+using Infrastructure.Exporters;
 using Infrastructure.Providers;
 using Infrastructure.Settings;
 using Microsoft.Extensions.Configuration;
@@ -18,6 +19,8 @@ namespace Infrastructure.Extensions
             services.AddTransient<IVideoDownloader, YouTubeDownloader>();
             services.AddTransient<ITranscriber, WhisperTranscriber>();
             services.AddTransient<IRecipeParser, RecipeParser>();
+
+            services.AddTransient<IRecipeExporter, MarkdownRecipeExporter>();
 
             return services;
         }
