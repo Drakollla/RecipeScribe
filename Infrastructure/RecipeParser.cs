@@ -4,6 +4,7 @@ using Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Infrastructure
 {
@@ -51,6 +52,7 @@ namespace Infrastructure
             if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace)
                 responseText = responseText.Substring(firstBrace, lastBrace - firstBrace + 1);
 
+            responseText = Regex.Replace(responseText, @"\},\s*""([A-Za-z0-9_]+)""\s*:", @"},{""$1"":");
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
             try
