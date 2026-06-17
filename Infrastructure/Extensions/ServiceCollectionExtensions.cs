@@ -1,9 +1,12 @@
 ﻿using Core.Contracts;
+using Infrastructure.Database;
 using Infrastructure.Exporters;
 using Infrastructure.Providers;
 using Infrastructure.Settings;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using RecipeScribe.Infrastructure.Database;
 
 namespace Infrastructure.Extensions
 {
@@ -11,6 +14,16 @@ namespace Infrastructure.Extensions
     {
         public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
         {
+            string connectionString = configuration.GetConnectionString("DefaultConnection")
+                ?? throw new InvalidOperationException("Строка подключения 'DefaultConnection' не найдена.");
+
+            services.AddDbContext<RecipeDbContext>(options =>
+                options.UseSqlServer(connectionString),
+                ServiceLifetime.Transient,
+                ServiceLifetime.Transient);
+
+            services.AddTransient<RecipeRepository>();
+
             var llmSettings = configuration.GetSection("LlmSettings").Get<LlmSettings>() ?? new LlmSettings();
             services.AddSingleton(llmSettings);
 
