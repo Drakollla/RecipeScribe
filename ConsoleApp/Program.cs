@@ -2,6 +2,7 @@
 using Infrastructure.Extensions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Serilog;
 
 System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
@@ -11,17 +12,19 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Console(outputTemplate: "[{Level:u3}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
-var configuration = new ConfigurationBuilder()
-    .SetBasePath(AppContext.BaseDirectory)
-    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-    .AddUserSecrets<Program>()
+var host = Host.CreateDefaultBuilder(args)
+    .ConfigureAppConfiguration((hostingContext, config) =>
+    {
+        config.SetBasePath(AppContext.BaseDirectory)
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+            .AddUserSecrets<Program>();
+    })
+    .ConfigureServices((hostContext, services) =>
+    {
+        services.AddInfrastructureServices(hostContext.Configuration);
+        services.AddHostedService<TelegramBotService>();
+        services.AddLogging(builder => builder.AddSerilog(dispose: true));
+    })
     .Build();
 
-var serviceProvider = new ServiceCollection()
-    .AddInfrastructureServices(configuration)
-    .AddLogging(builder => builder.AddSerilog(dispose: true))
-    .AddTransient<ConsoleUi>()
-    .BuildServiceProvider();
-
-var app = serviceProvider.GetRequiredService<ConsoleUi>();
-await app.RunAsync();
+await host.RunAsync();

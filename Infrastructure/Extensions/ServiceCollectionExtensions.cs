@@ -7,50 +7,74 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using RecipeScribe.Infrastructure.Database;
+using Telegram.Bot;
 
-namespace Infrastructure.Extensions
+namespace Infrastructure.Extensions;
+
+public static class ServiceCollectionExtensions
 {
-    public static class ServiceCollectionExtensions
+    public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
-        public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
+        services.AddDatabaseServices(configuration);
+        services.AddLlmServices(configuration);
+        services.AddTelegramServices(configuration);
+        services.AddTransient<IVideoDownloader, YouTubeDownloader>();
+        services.AddTransient<ITranscriber, WhisperTranscriber>();
+        services.AddTransient<IRecipeExporter, MarkdownRecipeExporter>();
+
+        return services;
+    }
+
+    private static IServiceCollection AddDatabaseServices(this IServiceCollection services, IConfiguration configuration)
+    {
+        string connectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("Строка подключения 'DefaultConnection' не найдена.");
+
+        services.AddDbContext<RecipeDbContext>(options =>
+            options.UseSqlServer(connectionString),
+            ServiceLifetime.Transient,
+            ServiceLifetime.Transient);
+
+        services.AddTransient<RecipeRepository>();
+
+        return services;
+    }
+
+    private static IServiceCollection AddLlmServices(this IServiceCollection services, IConfiguration configuration)
+    {
+        var llmSettings = configuration.GetSection("LlmSettings").Get<LlmSettings>() ?? new LlmSettings();
+        services.AddSingleton(llmSettings);
+
+        services.AddKernelWithProvider(configuration);
+
+        services.AddTransient<LlmService>();
+        services.AddTransient<IRecipeParser, RecipeParser>();
+
+        return services;
+    }
+
+    private static IServiceCollection AddKernelWithProvider(this IServiceCollection services, IConfiguration config)
+    {
+        string providerName = config["LLM:Provider"] ?? "OpenAI";
+
+        ILLMProvider provider = providerName switch
         {
-            string connectionString = configuration.GetConnectionString("DefaultConnection")
-                ?? throw new InvalidOperationException("Строка подключения 'DefaultConnection' не найдена.");
+            "OpenAI" => new OpenAiProvider(),
+            _ => throw new InvalidOperationException($"Неизвестный LLM-провайдер: {providerName}.")
+        };
 
-            services.AddDbContext<RecipeDbContext>(options =>
-                options.UseSqlServer(connectionString),
-                ServiceLifetime.Transient,
-                ServiceLifetime.Transient);
+        provider.Register(services, config);
 
-            services.AddTransient<RecipeRepository>();
+        return services;
+    }
 
-            var llmSettings = configuration.GetSection("LlmSettings").Get<LlmSettings>() ?? new LlmSettings();
-            services.AddSingleton(llmSettings);
+    private static IServiceCollection AddTelegramServices(this IServiceCollection services, IConfiguration configuration)
+    {
+        string telegramToken = configuration["ApiKeys:Telegram"]
+            ?? throw new InvalidOperationException("Токен Telegram не найден в конфигурации (ApiKeys:Telegram).");
 
-            services.AddKernelWithProvider(configuration);
+        services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(telegramToken));
 
-            services.AddTransient<IVideoDownloader, YouTubeDownloader>();
-            services.AddTransient<ITranscriber, WhisperTranscriber>();
-            services.AddTransient<IRecipeParser, RecipeParser>();
-
-            services.AddTransient<IRecipeExporter, MarkdownRecipeExporter>();
-
-            return services;
-        }
-
-        private static IServiceCollection AddKernelWithProvider(this IServiceCollection services, IConfiguration config)
-        {
-            string providerName = config["LLM:Provider"] ?? "OpenAI";
-
-            ILLMProvider provider = providerName switch
-            {
-                "OpenAI" => new OpenAiProvider(),
-                _ => throw new InvalidOperationException($"Неизвестный LLM-провайдер: {providerName}.")
-            };
-
-            provider.Register(services, config);
-
-            return services;
-        }
+        return services;
     }
 }
