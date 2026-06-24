@@ -1,7 +1,7 @@
 ﻿using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
-namespace Infrastructure
+namespace Infrastructure.Services
 {
     internal class LlmService
     {

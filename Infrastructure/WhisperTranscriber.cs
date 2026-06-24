@@ -1,5 +1,6 @@
 ﻿using Core.Contracts;
-using Core.Models;
+using Core.Enums;
+using Core.Exceptions;
 using System.Diagnostics;
 using System.Text;
 using Whisper.net;

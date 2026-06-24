@@ -2,6 +2,7 @@
 using Infrastructure.Database;
 using Infrastructure.Exporters;
 using Infrastructure.Providers;
+using Infrastructure.Services;
 using Infrastructure.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -21,6 +22,9 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IVideoDownloader, YouTubeDownloader>();
         services.AddTransient<ITranscriber, WhisperTranscriber>();
         services.AddTransient<IRecipeExporter, MarkdownRecipeExporter>();
+
+        services.AddScoped<IMealPlannerService, MealPlannerService>();
+        services.AddScoped<IRecipeRepository, RecipeRepository>();
 
         return services;
     }

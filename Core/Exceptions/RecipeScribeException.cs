@@ -1,4 +1,6 @@
-namespace Core.Models
+using Core.Enums;
+
+namespace Core.Exceptions
 {
     public class RecipeScribeException : Exception
     {

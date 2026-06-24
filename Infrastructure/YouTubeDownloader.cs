@@ -1,5 +1,7 @@
 ﻿using Core.Contracts;
-using Core.Models;
+using Core.Enums;
+using Core.Exceptions;
+using Core.Helpers;
 using System.Diagnostics;
 using YoutubeDLSharp;
 using YoutubeDLSharp.Options;
@@ -28,9 +30,9 @@ namespace Infrastructure
             };
 
             var video = await ytdl.RunVideoDataFetch(videoUrl);
-            
+
             if (!video.Success)
-                throw new RecipeScribeException(ErrorType.VideoNotFound,$"Не удалось получить данные о видео: {string.Join("; ", video.ErrorOutput)}");
+                throw new RecipeScribeException(ErrorType.VideoNotFound, $"Не удалось получить данные о видео: {string.Join("; ", video.ErrorOutput)}");
 
             var options = new OptionSet
             {
@@ -43,7 +45,7 @@ namespace Infrastructure
             if (!downloadResult.Success)
             {
                 string errorDetails = string.Join(Environment.NewLine, downloadResult.ErrorOutput);
-                throw new RecipeScribeException(ErrorType.Network,$"Не удалось скачать аудио. Ошибка: {errorDetails}");
+                throw new RecipeScribeException(ErrorType.Network, $"Не удалось скачать аудио. Ошибка: {errorDetails}");
             }
 
             return new ViewMetadata
