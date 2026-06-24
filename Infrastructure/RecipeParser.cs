@@ -26,7 +26,7 @@ namespace Infrastructure
 
         public async Task<Recipe> ParseRecipeAsync(string transcript)
         {
-            string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "RecipeParser.txt");
+            string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "RecipeParser.md");
             string promptTemplate = await File.ReadAllTextAsync(promptPath);
 
             string fullPrompt = promptTemplate

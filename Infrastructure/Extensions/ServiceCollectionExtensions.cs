@@ -25,6 +25,8 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IMealPlannerService, MealPlannerService>();
         services.AddScoped<IRecipeRepository, RecipeRepository>();
+        services.AddTransient<TelegramRecipeFlow>();
+        services.AddTransient<TelegramMealPlanFlow>();
 
         return services;
     }
