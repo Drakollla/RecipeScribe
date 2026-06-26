@@ -1,36 +1,87 @@
 # RecipeScribe
-Извлекает рецепты из YouTube-видео: описание → комментарий → транскрибация аудио (через Whisper + LLM).
 
-## Запуск
+Ассистент планирования меню и импорта рецептов на базе .NET 8 и искусственного интеллекта (Semantic Kernel + LLM (на данный момент используется gpt-oss-20b)). 
 
-```powershell
-dotnet build RecipeScribe.sln
-dotnet run --project RecipeScribe\ConsoleApp
-```
+Проект позволяет извлекать кулинарные рецепты из видео-источников, сохранять их в локальную базу данных, планировать меню на выбранные даты и генерировать сгруппированные по отделам супермаркета списки покупок.
 
-## Настройка
+---
+
+## Поддерживаемые платформы для импорта
+
+*   **YouTube** (Чтение описания, первого комментария, транскрибация аудио через Whisper).
+*   **Instagram** (Транскрибация аудио через Whisper; загрузка текстового описания).
+*   **Pinterest** (Транскрибация аудио).
+
+---
+
+## Ключевые возможности
+
+*   **Импорт рецептов:** Бот последовательно пытается прочитать описание видео и закрепленный комментарий. Если текста нет, запускается локальное распознавание речи (Whisper.net), после чего LLM форматирует полученные данные в структурированный JSON (название, ингредиенты с объемами, упорядоченные шаги приготовления).
+*   **Интерактивное планирование меню:** По команде `/plan_ai` бот предлагает выбрать день (сегодня, завтра или любую другую дату в ручном вводе) и с помощью LLM подбирает меню из базы данных.
+*   **Компактный интерфейс чата:** Под сообщением с меню выводятся кнопки для чтения рецептов. Они генерируются в оперативном потоке памяти в формате `.md` и нативно открываются во встроенном Markdown-просмотрщике Telegram, сохраняя историю чата чистой.
+*   **Cписок покупок:** Система автоматически объединяет дублирующиеся ингредиенты для выбранного меню, суммирует их объемы, а затем с помощью LLM распределяет продукты по отделам супермаркета (овощи, мясо, бакалея, специи).
+
+---
+
+## Архитектура проекта
+
+Проект разделен на три слоя:
+
+*   **Core (Ядро):** Содержит доменные модели (Recipe, Ingredient, MealPlan) и интерфейсы сервисов.
+*   **Infrastructure (Инфраструктура):** Реализует работу с EF Core, SQLite/SQL Server, Whisper.net, YoutubeDLSharp, провайдером LLM и сценариями бота (TelegramRecipeFlow, TelegramMealPlanFlow).
+*   **ConsoleApp (Хост запуска):** Содержит точку входа, конфигурацию DI-контейнера и службу TelegramBotService (BackgroundService).
+
+---
+
+## Стек технологий
+
+*   **Платформа:** .NET 8, EF Core 8 (SQL Server LocalDB / SQLite)
+*   **AI-оркестрация:** Semantic Kernel, служба IChatCompletionService (совместима с OpenAI)
+*   **Транскрибация:** Whisper.net (библиотека-обертка над whisper.cpp, модель ggml-base.bin)
+*   **Загрузка медиа:** YoutubeDLSharp (обертка над yt-dlp)
+*   **Интерфейс:** Telegram.Bot
+
+---
+
+## Настройка проекта
+
+### 1. Конфигурация (appsettings.json)
+
+Заполните основные параметры подключения к вашей модели LLM на уровне проекта ConsoleApp:
 
 ```json
-// ConsoleApp/appsettings.json
 {
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=RecipeScribeDb;Trusted_Connection=True;"
+  },
   "LlmSettings": {
     "Endpoint": "https://api.groq.com/openai/v1/",
     "ModelId": "openai/gpt-oss-20b",
     "TargetLanguage": "Russian"
   },
-  "LLM:Provider": "OpenAI"
+  "ApiKeys": {
+    "Llm": "",
+    "Telegram": ""
+  }
 }
 ```
 
-API-ключ — через User Secrets:
+### 2. Хранение секретов (User Secrets)
 
-```powershell
-dotnet user-secrets set "ApiKeys:Llm" "<ключ>" --project ConsoleApp
-```
+Для безопасной локальной разработки пропишите API-ключи во внутреннее хранилище секретов .NET:
 
-## Как это работает
+```dotnet user-secrets init --project ConsoleApp```
 
-1. **YouTubeDownloader** — скачивает аудио через yt-dlp, читает описание и первый комментарий
-2. **WhisperTranscriber** — распознаёт речь из аудио (Whisper + ffmpeg)
-3. **RecipeParser** — отправляет текст в LLM, получает JSON-рецепт
-4. Если рецепт есть в описании — берёт оттуда, если нет — проверяет комментарий, в последнюю очередь транскрибирует аудио
+```dotnet user-secrets set "ApiKeys:Telegram" "ВАШ_ТОКЕН_ТГ_БОТА" --project ConsoleApp```
+
+```dotnet user-secrets set "ApiKeys:Llm" "ВАШ_API_КЛЮЧ_ИИ" --project ConsoleApp```
+
+# Запуск
+
+Применение миграций базы данных:
+
+```dotnet ef database update --project Infrastructure --startup-project ConsoleApp```
+
+Запуск приложения:
+
+```dotnet run --project ConsoleApp```
