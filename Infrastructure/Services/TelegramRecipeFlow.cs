@@ -106,6 +106,9 @@ namespace Infrastructure.Services
                 recipe = await _parser.ParseRecipeAsync(transcript);
             }
 
+            if (recipe != null && (string.IsNullOrWhiteSpace(recipe.Title) || recipe.Title.Trim() == "#" || recipe.Title == "Нет рецепта"))
+                recipe.Title = GetCleanVideoTitle(metadata.Title);
+
             return recipe;
         }
 
@@ -138,6 +141,18 @@ namespace Infrastructure.Services
                 sb.AppendLine($"{step.Number}. {step.Description}");
 
             return sb.ToString();
+        }
+
+        private string GetCleanVideoTitle(string title)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return "Рецепт";
+
+            var words = title.Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            var cleanWords = words.Where(w => !w.StartsWith("#"));
+            var cleanTitle = string.Join(" ", cleanWords).Trim();
+
+            return string.IsNullOrWhiteSpace(cleanTitle) ? "Рецепт" : cleanTitle;
         }
     }
 }
