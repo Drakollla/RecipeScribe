@@ -8,6 +8,8 @@ namespace Infrastructure.Helpers
         public const string InvalidDatePrompt = "Неверный формат даты. Пожалуйста, введите дату в формате *ДД.ММ* или *ДД.ММ.ГГГГ* (например, *25.06*):";
         public const string DefaultPreferences = "без особых предпочтений";
         public const string DefaultCommandsPrompt = "Доступные команды:\n/menu — показать меню на сегодня\n/plan_ai — спланировать меню через ИИ\n\nИли просто отправьте ссылку на видео-рецепт!";
+        public const string SearchPrompt = "Введите ингредиенты для поиска через запятую (например: курица, сыр, картофель):";
+        public const string SearchEmptyError = "Ошибка: Вы не ввели ингредиенты для поиска.";
 
         public static string GetPreferencesPrompt(DateOnly date) =>
             $"Выбрана дата: *{date:dd.MM.yyyy}*.\n\nЕсть ли пожелания к меню (например, вегетарианское, быстрое)? Напишите их сообщением ниже или нажмите кнопку:";

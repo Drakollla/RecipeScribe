@@ -4,6 +4,7 @@
     {
         None,
         WaitingForCustomDate,
-        WaitingForAiPreferences
+        WaitingForAiPreferences,
+        WaitingForSearchIngredients
     }
 }

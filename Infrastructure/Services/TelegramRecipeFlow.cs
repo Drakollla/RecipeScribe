@@ -1,8 +1,10 @@
 ﻿using Core.Contracts;
 using Core.Models;
+using Infrastructure.Helpers;
 using System.Text;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Infrastructure.Services
 {
@@ -79,7 +81,7 @@ namespace Infrastructure.Services
         private async Task<Recipe?> ExtractRecipeAsync(ITelegramBotClient botClient, long chatId, int statusMessageId, string url, CancellationToken cancellationToken)
         {
             var metadata = await _downloader.DownloadAudioAsync(url);
-            
+
             await botClient.EditMessageText(chatId, statusMessageId, $"⬇️ Видео успешно загружено: \"{metadata.Title}\". Пробую найти рецепт в описании...", cancellationToken: cancellationToken);
 
             Recipe? recipe = null;
@@ -110,6 +112,43 @@ namespace Infrastructure.Services
                 recipe.Title = GetCleanVideoTitle(metadata.Title);
 
             return recipe;
+        }
+
+
+        public async Task ProcessSearchByIngredientsAsync(ITelegramBotClient botClient, long chatId, string inputText, CancellationToken cancellationToken)
+        {
+            var products = inputText.Split(',')
+                .Select(p => p.Trim())
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .ToList();
+
+            if (!products.Any())
+            {
+                await botClient.SendMessage(chatId, TelegramUiElements.SearchEmptyError, cancellationToken: cancellationToken);
+                return;
+            }
+
+            var matchingRecipes = await _repository.SearchByIngredientsAsync(products);
+
+            if (!matchingRecipes.Any())
+            {
+                await botClient.SendMessage(chatId, "Подходящих рецептов в базе данных не найдено.", cancellationToken: cancellationToken);
+                return;
+            }
+
+            var buttons = new List<List<InlineKeyboardButton>>();
+            
+            foreach (var recipe in matchingRecipes)
+                buttons.Add([InlineKeyboardButton.WithCallbackData(recipe.Title, $"show_recipe:{recipe.Id}")]);
+
+            var keyboard = new InlineKeyboardMarkup(buttons);
+
+            await botClient.SendMessage(
+                chatId: chatId,
+                text: $"Найдено подходящих рецептов: {matchingRecipes.Count}. Выберите рецепт для просмотра:",
+                replyMarkup: keyboard,
+                cancellationToken: cancellationToken
+            );
         }
 
         private bool IsRecipeMissing(Recipe? recipe)

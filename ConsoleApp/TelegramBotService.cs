@@ -35,7 +35,8 @@ namespace ConsoleApp
             await _botClient.SetMyCommands(
             [
                 new BotCommand { Command = "menu", Description = "Показать меню на сегодня" },
-                new BotCommand { Command = "plan_ai", Description = "Спланировать меню через ИИ" }
+                new BotCommand { Command = "plan_ai", Description = "Спланировать меню через ИИ" },
+                new BotCommand { Command = "search", Description = "Поиск рецептов по ингредиентам" }
             ], cancellationToken: stoppingToken);
 
             var receiverOptions = new ReceiverOptions
@@ -82,82 +83,128 @@ namespace ConsoleApp
 
             if (stateInfo.State == BotState.WaitingForCustomDate)
             {
-                using var scope = _scopeFactory.CreateScope();
-                var mealPlanFlow = scope.ServiceProvider.GetRequiredService<TelegramMealPlanFlow>();
-
-                if (mealPlanFlow.TryParseDate(text, out var parsedDate))
-                {
-                    stateInfo.TargetDate = parsedDate;
-                    stateInfo.State = BotState.WaitingForAiPreferences;
-
-                    await botClient.SendMessage(
-                        chatId,
-                        TelegramUiElements.GetPreferencesPrompt(parsedDate),
-                        parseMode: ParseMode.Markdown,
-                        replyMarkup: TelegramUiElements.GetPreferencesKeyboard(),
-                        cancellationToken: cancellationToken
-                    );
-                }
-                else
-                {
-                    await botClient.SendMessage(
-                        chatId,
-                        TelegramUiElements.InvalidDatePrompt,
-                        parseMode: ParseMode.Markdown,
-                        cancellationToken: cancellationToken
-                    );
-                }
+                await HandleWaitingForCustomDateAsync(botClient, chatId, text, stateInfo, cancellationToken);
                 return;
             }
 
             if (stateInfo.State == BotState.WaitingForAiPreferences)
             {
-                stateInfo.State = BotState.None;
-                stateInfo.LastPreferences = text;
-
-                RunScoped(async sp =>
-                {
-                    var flow = sp.GetRequiredService<TelegramMealPlanFlow>();
-                    await flow.ProcessAiPlanningAsync(botClient, chatId, stateInfo.TargetDate, text, cancellationToken);
-                }, cancellationToken);
-
+                HandleWaitingForAiPreferences(botClient, chatId, text, stateInfo, cancellationToken);
                 return;
             }
 
             if (text.StartsWith('/'))
             {
-                string command = text.ToLower().Split(' ')[0];
-                switch (command)
-                {
-                    case "/menu":
-                        RunScoped(async sp =>
-                        {
-                            var flow = sp.GetRequiredService<TelegramMealPlanFlow>();
-                            await flow.ShowTodayMenuAsync(botClient, chatId, cancellationToken);
-                        }, cancellationToken);
-                        return;
-
-                    case "/plan_ai":
-                        stateInfo.State = BotState.None;
-
-                        await botClient.SendMessage(
-                            chatId,
-                            "На какой день вы хотите запланировать меню?",
-                            replyMarkup: TelegramUiElements.GetDateSelectionKeyboard(),
-                            cancellationToken: cancellationToken
-                        );
-                        return;
-
-                    default:
-                        await botClient.SendMessage(
-                            chatId,
-                            TelegramUiElements.DefaultCommandsPrompt,
-                            cancellationToken: cancellationToken
-                        );
-                        return;
-                }
+                await HandleCommandAsync(botClient, chatId, text, stateInfo, cancellationToken);
+                return;
             }
 
+            if (stateInfo.State == BotState.WaitingForSearchIngredients)
+            {
+                HandleWaitingForSearchIngredients(botClient, chatId, text, stateInfo, cancellationToken);
+                return;
+            }
+
+            await HandleTextOrUrlAsync(botClient, chatId, text, cancellationToken);
+        }
+
+        private async Task HandleWaitingForCustomDateAsync(ITelegramBotClient botClient, long chatId, string text, UserStateInfo stateInfo, CancellationToken cancellationToken)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var mealPlanFlow = scope.ServiceProvider.GetRequiredService<TelegramMealPlanFlow>();
+
+            if (mealPlanFlow.TryParseDate(text, out var parsedDate))
+            {
+                stateInfo.TargetDate = parsedDate;
+                stateInfo.State = BotState.WaitingForAiPreferences;
+
+                await botClient.SendMessage(
+                    chatId,
+                    TelegramUiElements.GetPreferencesPrompt(parsedDate),
+                    parseMode: ParseMode.Markdown,
+                    replyMarkup: TelegramUiElements.GetPreferencesKeyboard(),
+                    cancellationToken: cancellationToken
+                );
+            }
+            else
+            {
+                await botClient.SendMessage(
+                    chatId,
+                    TelegramUiElements.InvalidDatePrompt,
+                    parseMode: ParseMode.Markdown,
+                    cancellationToken: cancellationToken
+                );
+            }
+        }
+
+        private void HandleWaitingForAiPreferences(ITelegramBotClient botClient, long chatId, string text, UserStateInfo stateInfo, CancellationToken cancellationToken)
+        {
+            stateInfo.State = BotState.None;
+            stateInfo.LastPreferences = text;
+
+            RunScoped(async sp =>
+            {
+                var flow = sp.GetRequiredService<TelegramMealPlanFlow>();
+                await flow.ProcessAiPlanningAsync(botClient, chatId, stateInfo.TargetDate, text, cancellationToken);
+            }, cancellationToken);
+        }
+
+        private void HandleWaitingForSearchIngredients(ITelegramBotClient botClient, long chatId, string text, UserStateInfo stateInfo, CancellationToken cancellationToken)
+        {
+            stateInfo.State = BotState.None;
+
+            RunScoped(async sp =>
+            {
+                var flow = sp.GetRequiredService<TelegramRecipeFlow>();
+                await flow.ProcessSearchByIngredientsAsync(botClient, chatId, text, cancellationToken);
+            }, cancellationToken);
+        }
+
+        private async Task HandleCommandAsync(ITelegramBotClient botClient, long chatId, string text, UserStateInfo stateInfo, CancellationToken cancellationToken)
+        {
+            string command = text.ToLower().Split(' ')[0];
+            switch (command)
+            {
+                case "/menu":
+                    RunScoped(async sp =>
+                    {
+                        var flow = sp.GetRequiredService<TelegramMealPlanFlow>();
+                        await flow.ShowTodayMenuAsync(botClient, chatId, cancellationToken);
+                    }, cancellationToken);
+                    break;
+
+                case "/plan_ai":
+                    stateInfo.State = BotState.None;
+                    await botClient.SendMessage(
+                        chatId,
+                        "На какой день вы хотите запланировать меню?",
+                        replyMarkup: TelegramUiElements.GetDateSelectionKeyboard(),
+                        cancellationToken: cancellationToken
+                    );
+                    break;
+
+                case "/search":
+                    stateInfo.State = BotState.WaitingForSearchIngredients;
+                    await botClient.SendMessage(
+                        chatId,
+                        TelegramUiElements.SearchPrompt,
+                        parseMode: ParseMode.Markdown,
+                        cancellationToken: cancellationToken
+                    );
+                    break;
+
+                default:
+                    await botClient.SendMessage(
+                        chatId,
+                        TelegramUiElements.DefaultCommandsPrompt,
+                        cancellationToken: cancellationToken
+                    );
+                    break;
+            }
+        }
+
+        private async Task HandleTextOrUrlAsync(ITelegramBotClient botClient, long chatId, string text, CancellationToken cancellationToken)
+        {
             bool isUrl = Uri.TryCreate(text, UriKind.Absolute, out var uriResult)
                          && (uriResult.Scheme == Uri.UriSchemeHttp || uriResult.Scheme == Uri.UriSchemeHttps);
 
@@ -179,127 +226,156 @@ namespace ConsoleApp
             if (callbackQuery.Message is not { } message)
                 return;
 
-            long chatId = message.Chat.Id;
-            int messageId = message.Id;
             string data = callbackQuery.Data ?? string.Empty;
 
             await botClient.AnswerCallbackQuery(callbackQuery.Id, cancellationToken: cancellationToken);
 
-            var stateInfo = _userStates.GetOrAdd(chatId, _ => new UserStateInfo());
-
             if (data.StartsWith("plan_date:"))
+                await HandleDateSelectedAsync(botClient, message, data, cancellationToken);
+            else if (data == "pref_none")
+                await HandlePreferencesSkippedAsync(botClient, message, cancellationToken);
+            else if (data == "regenerate_ai")
+                await HandleRegenerateMenuAsync(botClient, message, cancellationToken);
+            else if (data == "confirm_menu")
+                HandleConfirmMenu(botClient, message, cancellationToken);
+            else if (data.StartsWith("shopping_list:"))
+                HandleGetShoppingList(botClient, message, data, cancellationToken);
+            else if (data.StartsWith("show_recipe:"))
+                HandleShowRecipe(botClient, message, data, cancellationToken);
+        }
+
+        private async Task HandleDateSelectedAsync(ITelegramBotClient botClient, Message message, string data, CancellationToken cancellationToken)
+        {
+            long chatId = message.Chat.Id;
+            int messageId = message.Id;
+            string dateType = data.Split(':')[1];
+            DateOnly targetDate;
+
+            if (dateType == "today")
+                targetDate = DateOnly.FromDateTime(DateTime.Today);
+            else if (dateType == "tomorrow")
+                targetDate = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
+            else
             {
-                string dateType = data.Split(':')[1];
-                DateOnly targetDate;
-
-                if (dateType == "today")
-                {
-                    targetDate = DateOnly.FromDateTime(DateTime.Today);
-                }
-                else if (dateType == "tomorrow")
-                {
-                    targetDate = DateOnly.FromDateTime(DateTime.Today.AddDays(1));
-                }
-                else
-                {
-                    stateInfo.State = BotState.WaitingForCustomDate;
-                    await botClient.DeleteMessage(chatId, messageId, cancellationToken: cancellationToken);
-                    await botClient.SendMessage(
-                        chatId,
-                        TelegramUiElements.EnterDatePrompt,
-                        parseMode: ParseMode.Markdown,
-                        cancellationToken: cancellationToken
-                    );
-                    return;
-                }
-
-                stateInfo.TargetDate = targetDate;
-                stateInfo.State = BotState.WaitingForAiPreferences;
+                var stateInfo = _userStates.GetOrAdd(chatId, _ => new UserStateInfo());
+                stateInfo.State = BotState.WaitingForCustomDate;
 
                 await botClient.DeleteMessage(chatId, messageId, cancellationToken: cancellationToken);
                 await botClient.SendMessage(
                     chatId,
-                    TelegramUiElements.GetPreferencesPrompt(targetDate),
+                    TelegramUiElements.EnterDatePrompt,
                     parseMode: ParseMode.Markdown,
-                    replyMarkup: TelegramUiElements.GetPreferencesKeyboard(),
                     cancellationToken: cancellationToken
                 );
+                return;
             }
-            else if (data == "pref_none")
+
+            var userState = _userStates.GetOrAdd(chatId, _ => new UserStateInfo());
+            userState.TargetDate = targetDate;
+            userState.State = BotState.WaitingForAiPreferences;
+
+            await botClient.DeleteMessage(chatId, messageId, cancellationToken: cancellationToken);
+            await botClient.SendMessage(
+                chatId,
+                TelegramUiElements.GetPreferencesPrompt(targetDate),
+                parseMode: ParseMode.Markdown,
+                replyMarkup: TelegramUiElements.GetPreferencesKeyboard(),
+                cancellationToken: cancellationToken
+            );
+        }
+
+        private async Task HandlePreferencesSkippedAsync(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
+        {
+            long chatId = message.Chat.Id;
+            int messageId = message.Id;
+
+            var stateInfo = _userStates.GetOrAdd(chatId, _ => new UserStateInfo());
+            stateInfo.State = BotState.None;
+            stateInfo.LastPreferences = TelegramUiElements.DefaultPreferences;
+
+            await botClient.DeleteMessage(chatId, messageId, cancellationToken: cancellationToken);
+
+            RunScoped(async sp =>
             {
-                stateInfo.State = BotState.None;
-                stateInfo.LastPreferences = TelegramUiElements.DefaultPreferences;
+                var flow = sp.GetRequiredService<TelegramMealPlanFlow>();
+                await flow.ProcessAiPlanningAsync(botClient, chatId, stateInfo.TargetDate, TelegramUiElements.DefaultPreferences, cancellationToken);
+            }, cancellationToken);
+        }
 
-                await botClient.DeleteMessage(chatId, messageId, cancellationToken: cancellationToken);
+        private async Task HandleRegenerateMenuAsync(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
+        {
+            long chatId = message.Chat.Id;
+            int messageId = message.Id;
 
-                RunScoped(async sp =>
-                {
-                    var flow = sp.GetRequiredService<TelegramMealPlanFlow>();
-                    await flow.ProcessAiPlanningAsync(botClient, chatId, stateInfo.TargetDate, TelegramUiElements.DefaultPreferences, cancellationToken);
-                }, cancellationToken);
-            }
-            else if (data == "regenerate_ai")
+            var stateInfo = _userStates.GetOrAdd(chatId, _ => new UserStateInfo());
+            string prefs = string.IsNullOrWhiteSpace(stateInfo.LastPreferences) ? TelegramUiElements.DefaultPreferences : stateInfo.LastPreferences;
+
+            await botClient.DeleteMessage(chatId, messageId, cancellationToken: cancellationToken);
+
+            RunScoped(async sp =>
             {
-                string prefs = string.IsNullOrWhiteSpace(stateInfo.LastPreferences) ? TelegramUiElements.DefaultPreferences : stateInfo.LastPreferences;
+                var flow = sp.GetRequiredService<TelegramMealPlanFlow>();
+                await flow.ProcessAiPlanningAsync(botClient, chatId, stateInfo.TargetDate, prefs, cancellationToken);
+            }, cancellationToken);
+        }
 
-                await botClient.DeleteMessage(chatId, messageId, cancellationToken: cancellationToken);
+        private void HandleConfirmMenu(ITelegramBotClient botClient, Message message, CancellationToken cancellationToken)
+        {
+            long chatId = message.Chat.Id;
+            int messageId = message.Id;
 
-                RunScoped(async sp =>
+            RunScoped(async sp =>
+            {
+                var mealPlannerService = sp.GetRequiredService<IMealPlannerService>();
+                var mealPlanFlow = sp.GetRequiredService<TelegramMealPlanFlow>();
+
+                var today = DateOnly.FromDateTime(DateTime.Today);
+                var plan = await mealPlannerService.GetPlanForDateAsync(chatId, today);
+
+                if (plan != null)
                 {
-                    var flow = sp.GetRequiredService<TelegramMealPlanFlow>();
-                    await flow.ProcessAiPlanningAsync(botClient, chatId, stateInfo.TargetDate, prefs, cancellationToken);
-                }, cancellationToken);
-            }
-            else if (data == "confirm_menu")
+                    string formattedMenu = mealPlanFlow.FormatMenuToMarkdown(plan) + "\nМеню успешно подтверждено!";
+                    var keyboard = mealPlanFlow.GetMenuKeyboard(plan, isConfirmed: true);
+
+                    await botClient.EditMessageText(chatId, messageId, formattedMenu, parseMode: ParseMode.Markdown, replyMarkup: keyboard, cancellationToken: cancellationToken);
+                }
+            }, cancellationToken);
+        }
+
+        private void HandleGetShoppingList(ITelegramBotClient botClient, Message message, string data, CancellationToken cancellationToken)
+        {
+            long chatId = message.Chat.Id;
+            string planIdStr = data.Split(':')[1];
+
+            if (Guid.TryParse(planIdStr, out var planId))
             {
                 RunScoped(async sp =>
                 {
                     var mealPlannerService = sp.GetRequiredService<IMealPlannerService>();
-                    var mealPlanFlow = sp.GetRequiredService<TelegramMealPlanFlow>();
+                    string shoppingListMarkdown = await mealPlannerService.GetShoppingListAsync(planId);
 
-                    var today = DateOnly.FromDateTime(DateTime.Today);
-                    var plan = await mealPlannerService.GetPlanForDateAsync(chatId, today);
-
-                    if (plan != null)
-                    {
-                        string formattedMenu = mealPlanFlow.FormatMenuToMarkdown(plan) + "\nМеню успешно подтверждено!";
-                        var keyboard = mealPlanFlow.GetMenuKeyboard(plan, isConfirmed: true);
-
-                        await botClient.EditMessageText(chatId, messageId, formattedMenu, parseMode: ParseMode.Markdown, replyMarkup: keyboard, cancellationToken: cancellationToken);
-                    }
+                    await botClient.SendMessage(
+                        chatId,
+                        shoppingListMarkdown,
+                        parseMode: ParseMode.Markdown,
+                        cancellationToken: cancellationToken
+                    );
                 }, cancellationToken);
             }
-            else if (data.StartsWith("shopping_list:"))
-            {
-                string planIdStr = data.Split(':')[1];
-                if (Guid.TryParse(planIdStr, out var planId))
-                {
-                    RunScoped(async sp =>
-                    {
-                        var mealPlannerService = sp.GetRequiredService<IMealPlannerService>();
-                        string shoppingListMarkdown = await mealPlannerService.GetShoppingListAsync(planId);
+        }
 
-                        await botClient.SendMessage(
-                            chatId,
-                            shoppingListMarkdown,
-                            parseMode: ParseMode.Markdown,
-                            cancellationToken: cancellationToken
-                        );
-                    }, cancellationToken);
-                }
-            }
-            else if (data.StartsWith("show_recipe:"))
-            {
-                string recipeIdStr = data.Split(':')[1];
+        private void HandleShowRecipe(ITelegramBotClient botClient, Message message, string data, CancellationToken cancellationToken)
+        {
+            long chatId = message.Chat.Id;
+            string recipeIdStr = data.Split(':')[1];
 
-                if (Guid.TryParse(recipeIdStr, out var recipeId))
+            if (Guid.TryParse(recipeIdStr, out var recipeId))
+            {
+                RunScoped(async sp =>
                 {
-                    RunScoped(async sp =>
-                    {
-                        var recipeFlow = sp.GetRequiredService<TelegramRecipeFlow>();
-                        await recipeFlow.SendRecipeDocumentAsync(botClient, chatId, recipeId, cancellationToken);
-                    }, cancellationToken);
-                }
+                    var recipeFlow = sp.GetRequiredService<TelegramRecipeFlow>();
+                    await recipeFlow.SendRecipeDocumentAsync(botClient, chatId, recipeId, cancellationToken);
+                }, cancellationToken);
             }
         }
 
