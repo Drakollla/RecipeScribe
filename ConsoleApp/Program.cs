@@ -1,9 +1,9 @@
-﻿using ConsoleApp;
-using Infrastructure.Extensions;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
+using TelegramBot;
+using TelegramBot.Extensions;
 
 System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
@@ -21,7 +21,7 @@ var host = Host.CreateDefaultBuilder(args)
     })
     .ConfigureServices((hostContext, services) =>
     {
-        services.AddInfrastructureServices(hostContext.Configuration);
+        services.AddTelegramServices(hostContext.Configuration);
         services.AddHostedService<TelegramBotService>();
         services.AddLogging(builder => builder.AddSerilog(dispose: true));
     })

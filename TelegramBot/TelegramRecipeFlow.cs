@@ -1,12 +1,11 @@
 ﻿using Core.Contracts;
 using Core.Models;
-using Infrastructure.Helpers;
 using System.Text;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
 
-namespace Infrastructure.Services
+namespace TelegramBot
 {
     public class TelegramRecipeFlow
     {
@@ -137,7 +136,7 @@ namespace Infrastructure.Services
             }
 
             var buttons = new List<List<InlineKeyboardButton>>();
-            
+
             foreach (var recipe in matchingRecipes)
                 buttons.Add([InlineKeyboardButton.WithCallbackData(recipe.Title, $"show_recipe:{recipe.Id}")]);
 

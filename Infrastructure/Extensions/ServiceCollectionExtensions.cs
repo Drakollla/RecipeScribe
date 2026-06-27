@@ -8,7 +8,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using RecipeScribe.Infrastructure.Database;
-using Telegram.Bot;
 
 namespace Infrastructure.Extensions;
 
@@ -18,15 +17,12 @@ public static class ServiceCollectionExtensions
     {
         services.AddDatabaseServices(configuration);
         services.AddLlmServices(configuration);
-        services.AddTelegramServices(configuration);
         services.AddTransient<IVideoDownloader, YouTubeDownloader>();
         services.AddTransient<ITranscriber, WhisperTranscriber>();
         services.AddTransient<IRecipeExporter, MarkdownRecipeExporter>();
 
         services.AddScoped<IMealPlannerService, MealPlannerService>();
         services.AddScoped<IRecipeRepository, RecipeRepository>();
-        services.AddTransient<TelegramRecipeFlow>();
-        services.AddTransient<TelegramMealPlanFlow>();
 
         return services;
     }
@@ -70,16 +66,6 @@ public static class ServiceCollectionExtensions
         };
 
         provider.Register(services, config);
-
-        return services;
-    }
-
-    private static IServiceCollection AddTelegramServices(this IServiceCollection services, IConfiguration configuration)
-    {
-        string telegramToken = configuration["ApiKeys:Telegram"]
-            ?? throw new InvalidOperationException("Токен Telegram не найден в конфигурации (ApiKeys:Telegram).");
-
-        services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(telegramToken));
 
         return services;
     }

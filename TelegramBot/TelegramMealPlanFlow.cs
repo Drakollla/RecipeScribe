@@ -5,8 +5,8 @@ using System.Text;
 using Telegram.Bot;
 using Telegram.Bot.Types.ReplyMarkups;
 
-namespace Infrastructure.Services
-{
+namespace TelegramBot 
+{ 
     public class TelegramMealPlanFlow
     {
         private readonly IMealPlannerService _mealPlannerService;
