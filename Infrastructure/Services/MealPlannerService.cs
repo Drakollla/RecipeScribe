@@ -70,12 +70,20 @@ namespace Infrastructure.Services
         {
             var user = await GetOrCreateUserAsync(telegramChatId);
 
+            //var availableRecipes = await _dbContext.Recipes
+            //    .Select(r => new
+            //    {
+            //        r.Id,
+            //        r.Title,
+            //        Ingredients = r.Ingredients.Select(i => i.Name).ToList()
+            //    })
+            //    .ToListAsync();
+
             var availableRecipes = await _dbContext.Recipes
                 .Select(r => new
                 {
                     r.Id,
-                    r.Title,
-                    Ingredients = r.Ingredients.Select(i => i.Name).ToList()
+                    r.Title
                 })
                 .ToListAsync();
 

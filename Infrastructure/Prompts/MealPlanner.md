@@ -4,7 +4,7 @@ The user wants to plan a daily menu consisting of Breakfast, Lunch, and Dinner.
 The user's request is written in {targetLanguage}.
 User request: "{userRequest}"
 
-Below is a JSON list of available recipes with their IDs, titles, and key ingredients:
+Below is a JSON list of available recipes with their IDs and titles:
 {recipesList}
 
 INSTRUCTIONS:

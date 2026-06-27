@@ -23,6 +23,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IMealPlannerService, MealPlannerService>();
         services.AddScoped<IRecipeRepository, RecipeRepository>();
+        services.AddTransient<IRecipeExtractorService, RecipeExtractorService>();
 
         return services;
     }

@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Infrastructure.Extensions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
@@ -21,8 +22,25 @@ var host = Host.CreateDefaultBuilder(args)
     })
     .ConfigureServices((hostContext, services) =>
     {
-        services.AddTelegramServices(hostContext.Configuration);
-        services.AddHostedService<TelegramBotService>();
+        var appMode = hostContext.Configuration["AppMode"] ?? "Both";
+
+        if (appMode.Equals("Telegram", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddTelegramServices(hostContext.Configuration);
+            services.AddHostedService<TelegramBotService>();
+        }
+        else if (appMode.Equals("Web", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddInfrastructureServices(hostContext.Configuration);
+            //services.AddHostedService<WebUiService>();
+        }
+        else
+        {
+            services.AddTelegramServices(hostContext.Configuration);
+            services.AddHostedService<TelegramBotService>();
+            //services.AddHostedService<WebUiService>();
+        }
+
         services.AddLogging(builder => builder.AddSerilog(dispose: true));
     })
     .Build();

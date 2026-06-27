@@ -29,6 +29,9 @@ namespace TelegramBot.Extensions
             services.AddScoped<ICallbackQuery, ShowRecipeCallback>();
             services.AddScoped<ICallbackQuery, GetShoppingListCallback>();
             services.AddScoped<ICallbackQuery, ConfirmMenuCallback>();
+            services.AddScoped<ICallbackQuery, PlanDateCallback>();
+            services.AddScoped<ICallbackQuery, PreferencesNoneCallback>();
+            services.AddScoped<ICallbackQuery, RegenerateAiCallback>();
 
             return services;
         }
