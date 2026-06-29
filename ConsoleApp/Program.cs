@@ -1,4 +1,5 @@
-﻿using Infrastructure.Extensions;
+﻿using ConsoleApp.Services;
+using Infrastructure.Extensions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -32,13 +33,13 @@ var host = Host.CreateDefaultBuilder(args)
         else if (appMode.Equals("Web", StringComparison.OrdinalIgnoreCase))
         {
             services.AddInfrastructureServices(hostContext.Configuration);
-            //services.AddHostedService<WebUiService>();
+            services.AddHostedService<WebUiService>();
         }
         else
         {
             services.AddTelegramServices(hostContext.Configuration);
             services.AddHostedService<TelegramBotService>();
-            //services.AddHostedService<WebUiService>();
+            services.AddHostedService<WebUiService>();
         }
 
         services.AddLogging(builder => builder.AddSerilog(dispose: true));

@@ -361,3 +361,5 @@ MigrationBackup/
 
 Core/Tools/
 publish.bat
+**/wwwroot/
+**/services/
