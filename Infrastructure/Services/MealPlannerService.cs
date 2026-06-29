@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using System.Globalization;
+using System.Linq.Expressions;
 using System.Text;
 using System.Text.Json;
 
@@ -20,7 +21,9 @@ namespace Infrastructure.Services
         private readonly Kernel _kernel;
         private readonly IOptions<LlmSettings> _llmSettings;
 
-        public MealPlannerService(RecipeDbContext dbContext, 
+        private record RecipeCandidateDto(Guid Id, string Title);
+
+        public MealPlannerService(RecipeDbContext dbContext,
             Kernel kernel,
             IOptions<LlmSettings> llmSettings)
         {
@@ -34,10 +37,9 @@ namespace Infrastructure.Services
             var user = await GetOrCreateUserAsync(telegramChatId);
 
             var existingPlan = await GetPlanForDateAsync(telegramChatId, date);
+
             if (existingPlan != null)
-            {
                 _dbContext.MealPlans.Remove(existingPlan);
-            }
 
             var newPlan = new MealPlan
             {
@@ -70,69 +72,19 @@ namespace Infrastructure.Services
         {
             var user = await GetOrCreateUserAsync(telegramChatId);
 
-            //var availableRecipes = await _dbContext.Recipes
-            //    .Select(r => new
-            //    {
-            //        r.Id,
-            //        r.Title,
-            //        Ingredients = r.Ingredients.Select(i => i.Name).ToList()
-            //    })
-            //    .ToListAsync();
+            var recentRecipeIds = await GetRecentRecipeIdsAsync(user.Id, date);
+            string? primaryKeyword = GetPrimaryKeyword(userRequest);
 
-            var availableRecipes = await _dbContext.Recipes
-                .Select(r => new
-                {
-                    r.Id,
-                    r.Title
-                })
-                .ToListAsync();
+            var breakfasts = await GetCategoryCandidatesAsync(r => r.IsBreakfast, recentRecipeIds, primaryKeyword);
+            var lunches = await GetCategoryCandidatesAsync(r => r.IsLunch, recentRecipeIds, primaryKeyword);
+            var dinners = await GetCategoryCandidatesAsync(r => r.IsDinner, recentRecipeIds, primaryKeyword);
 
-            if (!availableRecipes.Any())
-                throw new InvalidOperationException("В базе данных еще нет сохраненных рецептов.");
+            var allCandidates = breakfasts.Concat(lunches).Concat(dinners).DistinctBy(r => r.Id).ToList();
 
-            var recipesJson = JsonSerializer.Serialize(availableRecipes, new JsonSerializerOptions { WriteIndented = false });
+            if (!allCandidates.Any())
+                throw new InvalidOperationException("В базе данных нет рецептов, соответствующих категориям приемов пищи.");
 
-            string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "MealPlanner.md");
-            string promptTemplate = await File.ReadAllTextAsync(promptPath);
-
-            string prompt = promptTemplate
-                .Replace("{recipesList}", recipesJson)
-                .Replace("{userRequest}", userRequest)
-                .Replace("{targetLanguage}", _llmSettings.Value.TargetLanguage); 
-
-            var arguments = new KernelArguments
-            {
-                { "recipesList", recipesJson },
-                { "userRequest", userRequest }
-            };
-
-            var result = await _kernel.InvokePromptAsync(prompt, arguments);
-            var rawResponse = result.ToString();
-
-            var cleanJson = rawResponse
-                .Replace("```json", "")
-                .Replace("```", "")
-                .Trim();
-
-            LlmMealPlanResponse? llmResponse;
-
-            try
-            {
-                llmResponse = JsonSerializer.Deserialize<LlmMealPlanResponse>(cleanJson, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-            }
-            catch (JsonException ex)
-            {
-                throw new InvalidOperationException($"Не удалось разобрать ответ от нейросети. Сырой ответ: {rawResponse}", ex);
-            }
-
-            if (llmResponse == null)
-            {
-                throw new InvalidOperationException("Нейросеть вернула пустой ответ.");
-            }
-
+            var llmResponse = await AskLlmForPlanAsync(allCandidates, userRequest);
             var mealRecipes = new Dictionary<MealType, Guid>();
 
             if (Guid.TryParse(llmResponse.Breakfast, out var breakfastId))
@@ -144,12 +96,93 @@ namespace Infrastructure.Services
             if (Guid.TryParse(llmResponse.Dinner, out var dinnerId))
                 mealRecipes[MealType.Dinner] = dinnerId;
 
-            if (!mealRecipes.Any())
-                throw new InvalidOperationException("Нейросеть не смогла подобрать рецепты из вашего списка.");
-
             return await CreatePlanManualAsync(telegramChatId, date, mealRecipes);
         }
 
+        private async Task<LlmMealPlanResponse> AskLlmForPlanAsync(List<RecipeCandidateDto> candidates, string userRequest)
+        {
+            var recipesJson = JsonSerializer.Serialize(candidates, new JsonSerializerOptions { WriteIndented = false });
+            string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "MealPlanner.md");
+            string promptTemplate = await File.ReadAllTextAsync(promptPath);
+
+            string prompt = promptTemplate
+                .Replace("{recipesList}", recipesJson)
+                .Replace("{userRequest}", userRequest)
+                .Replace("{targetLanguage}", _llmSettings.Value.TargetLanguage);
+
+            var rawResponse = await CallLlmAsync(prompt);
+            var cleanJson = rawResponse.Replace("```json", "").Replace("```", "").Trim();
+
+            try
+            {
+                var response = JsonSerializer.Deserialize<LlmMealPlanResponse>(cleanJson, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                return response ?? throw new InvalidOperationException("Нейросеть вернула пустой ответ.");
+            }
+            catch (JsonException ex)
+            {
+                throw new InvalidOperationException($"Не удалось разобрать ответ от ИИ: {rawResponse}", ex);
+            }
+        }
+
+
+        private async Task<List<RecipeCandidateDto>> GetCategoryCandidatesAsync(Expression<Func<Recipe, bool>> categoryPredicate,
+            List<Guid> recentRecipeIds, string? primaryKeyword)
+        {
+            var query = _dbContext.Recipes
+                .Where(categoryPredicate)
+                .Where(r => !recentRecipeIds.Contains(r.Id));
+
+            if (!string.IsNullOrEmpty(primaryKeyword))
+            {
+                query = query.OrderByDescending(r =>
+                    r.Title.Contains(primaryKeyword) ||
+                    r.Ingredients.Any(i => i.Name.Contains(primaryKeyword)));
+            }
+            else query = query.OrderBy(r => EF.Functions.Random());
+
+            var result = await query
+                .Take(10)
+                .Select(r => new RecipeCandidateDto(r.Id, r.Title))
+                .ToListAsync();
+
+            if (!result.Any())
+            {
+                result = await _dbContext.Recipes
+                    .Where(categoryPredicate)
+                    .OrderBy(r => EF.Functions.Random())
+                    .Take(10)
+                    .Select(r => new RecipeCandidateDto(r.Id, r.Title))
+                    .ToListAsync();
+            }
+
+            return result;
+        }
+
+        private string? GetPrimaryKeyword(string userRequest)
+        {
+            var keywords = userRequest.ToLower()
+                .Split(new[] { ' ', ',', '.', '!' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(w => w.Length > 3)
+                .ToList();
+
+            return keywords.FirstOrDefault();
+        }
+
+        private async Task<List<Guid>> GetRecentRecipeIdsAsync(Guid userId, DateOnly date)
+        {
+            var startDate = date.AddDays(-3);
+            var endDate = date.AddDays(3);
+
+            return await _dbContext.MealPlanItems
+                .Where(mpi => mpi.MealPlan.UserId == userId && mpi.MealPlan.Date >= startDate && mpi.MealPlan.Date <= endDate)
+                .Select(mpi => mpi.RecipeId)
+                .Distinct()
+                .ToListAsync();
+        }
 
         private async Task<string> CallLlmAsync(string prompt)
         {
@@ -161,8 +194,6 @@ namespace Infrastructure.Services
             var response = await chatService.GetChatMessageContentAsync(history, null, _kernel);
             return response.Content ?? string.Empty;
         }
-
-
 
         public async Task<MealPlan?> GetPlanForDateAsync(long telegramChatId, DateOnly date)
         {
@@ -230,14 +261,14 @@ namespace Infrastructure.Services
             {
                 Console.WriteLine($"[Ошибка ИИ при категоризации списка покупок]: {ex.Message}");
 
-                var fallbackBuilder = new StringBuilder();
-                fallbackBuilder.AppendLine("*СПИСОК ПОКУПОК (без сортировки по отделам):*");
-                fallbackBuilder.AppendLine("=========================");
-                fallbackBuilder.AppendLine(flatListString);
-                fallbackBuilder.AppendLine();
-                fallbackBuilder.AppendLine("*Не удалось распределить по отделам из-за временного сбоя сети.*");
+                var listOfIngredients = new StringBuilder();
+                listOfIngredients.AppendLine("*СПИСОК ПОКУПОК (без сортировки по отделам):*");
+                listOfIngredients.AppendLine("=========================");
+                listOfIngredients.AppendLine(flatListString);
+                listOfIngredients.AppendLine();
+                listOfIngredients.AppendLine("*Не удалось распределить по отделам из-за временного сбоя сети.*");
 
-                return fallbackBuilder.ToString();
+                return listOfIngredients.ToString();
             }
         }
 
@@ -255,7 +286,7 @@ namespace Infrastructure.Services
                 };
 
                 _dbContext.Users.Add(user);
-                
+
                 await _dbContext.SaveChangesAsync();
             }
 

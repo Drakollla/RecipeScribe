@@ -17,6 +17,8 @@ public static class ServiceCollectionExtensions
     {
         services.AddDatabaseServices(configuration);
         services.AddLlmServices(configuration);
+
+        services.AddTransient<RecipeRepository>();
         services.AddTransient<IVideoDownloader, YouTubeDownloader>();
         services.AddTransient<ITranscriber, WhisperTranscriber>();
         services.AddTransient<IRecipeExporter, MarkdownRecipeExporter>();
@@ -30,15 +32,16 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddDatabaseServices(this IServiceCollection services, IConfiguration configuration)
     {
-        string connectionString = configuration.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException("Строка подключения 'DefaultConnection' не найдена.");
+        //string connectionString = configuration.GetConnectionString("DefaultConnection")
+        //    ?? throw new InvalidOperationException("Строка подключения 'DefaultConnection' не найдена.");
 
         services.AddDbContext<RecipeDbContext>(options =>
-            options.UseSqlServer(connectionString),
-            ServiceLifetime.Transient,
-            ServiceLifetime.Transient);
+            options.UseSqlite(configuration.GetConnectionString("DefaultConnection")));
 
-        services.AddTransient<RecipeRepository>();
+        //services.AddDbContext<RecipeDbContext>(options =>
+        //    options.UseSqlServer(connectionString),
+        //    ServiceLifetime.Transient,
+        //    ServiceLifetime.Transient);
 
         return services;
     }
