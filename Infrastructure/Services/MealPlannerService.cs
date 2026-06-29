@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Text;
@@ -184,6 +185,18 @@ namespace Infrastructure.Services
                 .ToListAsync();
         }
 
+        //private async Task<string> CallLlmAsync(string prompt)
+        //{
+        //    var chatService = _kernel.GetRequiredService<IChatCompletionService>();
+
+        //    var history = new ChatHistory();
+        //    history.AddUserMessage(prompt);
+
+        //    var response = await chatService.GetChatMessageContentAsync(history, null, _kernel);
+        //    return response.Content ?? string.Empty;
+        //}
+
+
         private async Task<string> CallLlmAsync(string prompt)
         {
             var chatService = _kernel.GetRequiredService<IChatCompletionService>();
@@ -191,7 +204,14 @@ namespace Infrastructure.Services
             var history = new ChatHistory();
             history.AddUserMessage(prompt);
 
-            var response = await chatService.GetChatMessageContentAsync(history, null, _kernel);
+            // Принудительно задаем низкую температуру для стабильности ответов ИИ
+            var executionSettings = new OpenAIPromptExecutionSettings
+            {
+                Temperature = 0.1f
+            };
+
+            // Передаем настройки вторым параметром вместо null
+            var response = await chatService.GetChatMessageContentAsync(history, executionSettings, _kernel);
             return response.Content ?? string.Empty;
         }
 
@@ -251,11 +271,9 @@ namespace Infrastructure.Services
                 var categorizedList = rawResponse.Trim();
 
                 if (string.IsNullOrWhiteSpace(categorizedList))
-                {
                     throw new Exception("ИИ вернул пустой ответ (null or whitespace).");
-                }
 
-                return $"*СПИСОК ПОКУПОК ПО ОТДЕЛАМ:\n\n{categorizedList}";
+                return $"*СПИСОК ПОКУПОК ПО ОТДЕЛАМ:*\n\n{categorizedList}";
             }
             catch (Exception ex)
             {

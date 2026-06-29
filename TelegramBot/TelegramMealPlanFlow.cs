@@ -81,18 +81,8 @@ namespace TelegramBot
         public InlineKeyboardMarkup GetMenuKeyboard(MealPlan plan, bool isConfirmed)
         {
             var buttons = new List<List<InlineKeyboardButton>>();
-
-            if (!isConfirmed)
-            {
-                buttons.Add(
-                [
-                    InlineKeyboardButton.WithCallbackData("Подтвердить", "confirm_menu"),
-                InlineKeyboardButton.WithCallbackData("Перегенерировать", "regenerate_ai")
-                ]);
-            }
-
             var recipeButtons = new List<InlineKeyboardButton>();
-
+            
             foreach (var item in plan.Items.OrderBy(i => i.MealType))
             {
                 string icon = item.MealType switch
@@ -102,14 +92,17 @@ namespace TelegramBot
                     MealType.Dinner => "Ужин",
                     _ => "Рецепт"
                 };
-
                 recipeButtons.Add(InlineKeyboardButton.WithCallbackData(icon, $"show_recipe:{item.RecipeId}"));
             }
 
             if (recipeButtons.Any())
                 buttons.Add(recipeButtons);
 
-            buttons.Add([InlineKeyboardButton.WithCallbackData("Получить список покупок", $"shopping_list:{plan.Id}")]);
+            buttons.Add(
+            [
+                InlineKeyboardButton.WithCallbackData("Перегенерировать", "regenerate_ai"),
+                InlineKeyboardButton.WithCallbackData("Список покупок", $"shopping_list:{plan.Id}")
+            ]);
 
             return new InlineKeyboardMarkup(buttons);
         }
