@@ -8,5 +8,6 @@ namespace Core.Contracts
         Task<List<Recipe>> GetAllRecipesAsync();
         Task<List<Recipe>> SearchByIngredientsAsync(List<string> searchProducts, int limit = 10);
         Task<Recipe?> GetRecipeByIdAsync(Guid id);
+        Task<Recipe?> GetRecipeByUrlAsync(string url);
     }
 }

@@ -65,5 +65,18 @@ namespace RecipeScribe.Infrastructure.Database
                 .Include(r => r.Steps)
                 .FirstOrDefaultAsync(r => r.Id == id);
         }
+
+        public async Task<Recipe?> GetRecipeByUrlAsync(string url)
+        {
+            if (string.IsNullOrWhiteSpace(url))
+                return null;
+
+            string targetUrl = url.Trim();
+
+            return await Context.Recipes
+                .Include(r => r.Ingredients)
+                .Include(r => r.Steps)
+                .FirstOrDefaultAsync(r => r.VideoUrl == targetUrl);
+        }
     }
 }

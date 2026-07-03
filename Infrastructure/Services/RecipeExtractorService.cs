@@ -23,6 +23,16 @@ namespace Infrastructure.Services
         }
         public async Task<Recipe?> ExtractAndSaveRecipeAsync(string url, Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
         {
+            var existingRecipe = await _repository.GetRecipeByUrlAsync(url);
+
+            if (existingRecipe != null)
+            {
+                if (onProgress != null)
+                    await onProgress("Рецепт найден в локальной базе данных! Загружаю...");
+
+                return existingRecipe;
+            }
+
             var metadata = await _downloader.DownloadAudioAsync(url);
 
             Recipe? recipe = null;
