@@ -7,10 +7,7 @@ namespace RecipeScribe.Infrastructure.Database
 {
     public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
     {
-        public RecipeRepository(RecipeDbContext context) : base(context)
-        {
-            context.Database.EnsureCreated();
-        }
+        public RecipeRepository(RecipeDbContext context) : base(context) { }
 
         public async Task SaveRecipeAsync(Recipe recipe)
         {
