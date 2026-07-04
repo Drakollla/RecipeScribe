@@ -1,10 +1,13 @@
 ﻿using Core.Contracts;
 using Core.Models;
+using System.Text;
 
 namespace Infrastructure.Services
 {
     public class RecipeExtractorService : IRecipeExtractorService
     {
+        private const int maxRetries = 5;
+
         private readonly IVideoDownloader _downloader;
         private readonly ITranscriber _transcriber;
         private readonly IRecipeParser _parser;
@@ -21,6 +24,7 @@ namespace Infrastructure.Services
             _parser = parser;
             _repository = repository;
         }
+
         public async Task<Recipe?> ExtractAndSaveRecipeAsync(string url, Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
         {
             var existingRecipe = await _repository.GetRecipeByUrlAsync(url);
@@ -40,9 +44,9 @@ namespace Infrastructure.Services
             if (!string.IsNullOrWhiteSpace(metadata.Description) && metadata.Description.Length > 100)
             {
                 if (onProgress != null)
-                    await onProgress("⬇️ Видео загружено. Пробую найти рецепт в описании...");
+                    await onProgress("Видео загружено. Пробую найти рецепт в описании...");
 
-                recipe = await _parser.ParseRecipeAsync(metadata.Description);
+                recipe = await ParseRecipeWithRetryAsync(metadata.Description, cancellationToken);
             }
 
             if (IsRecipeMissing(recipe))
@@ -53,24 +57,46 @@ namespace Infrastructure.Services
                 string? firstComment = await _downloader.GetFirstCommentAsync(url);
 
                 if (!string.IsNullOrWhiteSpace(firstComment))
-                    recipe = await _parser.ParseRecipeAsync(firstComment);
+                    recipe = await ParseRecipeWithRetryAsync(firstComment, cancellationToken);
             }
 
             if (IsRecipeMissing(recipe))
             {
-                if (onProgress != null)
-                    await onProgress("Текст не найден. Запускаю локальное распознавание речи (Whisper)...");
+                string transcript;
 
-                string transcript = await _transcriber.TranscribeAsync(metadata.AudioFilePath);
+                if (!string.IsNullOrEmpty(metadata.CachedTranscript))
+                {
+                    if (onProgress != null)
+                        await onProgress("Использую ранее распознанную речь из локального кэша...");
+
+                    transcript = metadata.CachedTranscript;
+                }
+                else
+                {
+                    if (onProgress != null)
+                        await onProgress("Текст не найден. Запускаю локальное распознавание речи (Whisper)...");
+
+                    transcript = await _transcriber.TranscribeAsync(metadata.AudioFilePath);
+                    string directory = Path.GetDirectoryName(metadata.AudioFilePath)!;
+                    string fileName = Path.GetFileNameWithoutExtension(metadata.AudioFilePath);
+                    string transcriptPath = Path.Combine(directory, $"{fileName}.txt");
+
+                    await File.WriteAllTextAsync(transcriptPath, transcript, Encoding.UTF8);
+
+                    if (File.Exists(metadata.AudioFilePath))
+                        File.Delete(metadata.AudioFilePath);
+                }
 
                 if (onProgress != null)
                     await onProgress("Распознавание завершено. Форматирую рецепт через ИИ...");
 
-                recipe = await _parser.ParseRecipeAsync(transcript);
+                recipe = await ParseRecipeWithRetryAsync(transcript, cancellationToken);
             }
 
             if (recipe != null)
             {
+                recipe.VideoUrl = url.Trim();
+
                 if (string.IsNullOrWhiteSpace(recipe.Title) || recipe.Title.Trim() == "#" || recipe.Title == "Нет рецепта")
                     recipe.Title = CleanVideoTitle(metadata.Title);
 
@@ -78,6 +104,30 @@ namespace Infrastructure.Services
             }
 
             return recipe;
+        }
+
+        private async Task<Recipe?> ParseRecipeWithRetryAsync(string text, CancellationToken cancellationToken)
+        {
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    var recipe = await _parser.ParseRecipeAsync(text);
+
+                    if (recipe != null && !IsRecipeMissing(recipe))
+                        return recipe;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ИИ] Попытка {attempt}/{maxRetries} завершилась ошибкой парсинга JSON: {ex.Message}");
+
+                    if (attempt == maxRetries)
+                        throw;
+
+                    await Task.Delay(1000, cancellationToken);
+                }
+            }
+            return null;
         }
 
         private bool IsRecipeMissing(Recipe? recipe)

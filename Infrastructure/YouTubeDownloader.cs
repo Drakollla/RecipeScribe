@@ -20,7 +20,7 @@ namespace Infrastructure
         {
             await EnsureBinariesAsync();
 
-            CleanDirectory(AudioDir);
+            Directory.CreateDirectory(AudioDir);
 
             var ytdl = new YoutubeDL
             {
@@ -33,6 +33,22 @@ namespace Infrastructure
 
             if (!video.Success)
                 throw new RecipeScribeException(ErrorType.VideoNotFound, $"Не удалось получить данные о видео: {string.Join("; ", video.ErrorOutput)}");
+
+            string videoId = video.Data.ID;
+            string transcriptPath = Path.Combine(AudioDir, $"{videoId}.txt");
+
+            if (File.Exists(transcriptPath))
+            {
+                string cachedText = await File.ReadAllTextAsync(transcriptPath, System.Text.Encoding.UTF8);
+
+                return new ViewMetadata
+                {
+                    Title = video.Data.Title,
+                    Description = video.Data.Description,
+                    AudioFilePath = string.Empty,
+                    CachedTranscript = cachedText
+                };
+            }
 
             var options = new OptionSet
             {
@@ -52,7 +68,8 @@ namespace Infrastructure
             {
                 Title = video.Data.Title,
                 Description = video.Data.Description,
-                AudioFilePath = downloadResult.Data
+                AudioFilePath = downloadResult.Data,
+                CachedTranscript = null
             };
         }
 
@@ -92,6 +109,7 @@ namespace Infrastructure
         private static async Task EnsureBinariesAsync()
         {
             Directory.CreateDirectory(ToolsDir);
+            CleanOldCacheFiles(AudioDir);
 
             if (!File.Exists(YtdlpPath))
             {
@@ -116,6 +134,23 @@ namespace Infrastructure
             else
             {
                 Directory.CreateDirectory(path);
+            }
+        }
+
+        private static void CleanOldCacheFiles(string path)
+        {
+            if (!Directory.Exists(path))
+                return;
+
+            var threshold = DateTime.UtcNow.AddDays(-30);
+            var files = Directory.GetFiles(path, "*.txt");
+
+            foreach (var file in files)
+            {
+                var fileInfo = new FileInfo(file);
+                
+                if (fileInfo.LastWriteTimeUtc < threshold)
+                    fileInfo.Delete();
             }
         }
 
