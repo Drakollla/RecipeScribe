@@ -53,7 +53,6 @@ public static class ServiceCollectionExtensions
 
         services.AddKernelWithProvider(configuration);
 
-        services.AddTransient<LlmService>();
         services.AddTransient<IRecipeParser, RecipeParser>();
 
         return services;

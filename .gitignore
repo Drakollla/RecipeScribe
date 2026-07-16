@@ -360,6 +360,7 @@ MigrationBackup/
 .ionide/
 
 Core/Tools/
+logs/
 publish.bat
 **/wwwroot/
 **/services/
