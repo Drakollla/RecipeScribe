@@ -13,6 +13,8 @@ Each recipe must be analyzed to determine which meals it is suitable for. Set th
 - "IsDinner": true/false (suitable for dinner: e.g., light main courses, salads, bakes)
 - "IsSnack": true/false (suitable for snacks, desserts, or baking)
 
+Add an optional field "PreparationTips" — an array of objects with "Ingredient" and "Tip" fields. For each key ingredient, describe how to prepare it before cooking (wash, peel, chop, marinate, etc.). Be specific with measurements and techniques for beginners.
+
 JSON Schema:
 {
 	"Title": "Dish Name",
@@ -20,6 +22,16 @@ JSON Schema:
 	"IsLunch": false,
 	"IsDinner": true,
 	"IsSnack": false,
+	"PreparationTips": [
+	{
+		"Ingredient": "Chicken Fillet",
+		"Tip": "Cut into 2 cm cubes, season with salt and pepper"
+	},
+	{
+		"Ingredient": "Garlic",
+		"Tip": "Peel and mince finely"
+	}
+	],
 	"Ingredients": [
 	{
 		"Name": "Chicken Fillet",

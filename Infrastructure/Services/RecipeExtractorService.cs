@@ -144,7 +144,7 @@ public class RecipeExtractorService : IRecipeExtractorService
                 if (attempt == maxRetries)
                     throw;
 
-                await Task.Delay(1000, cancellationToken);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), cancellationToken);
             }
         }
         return null;

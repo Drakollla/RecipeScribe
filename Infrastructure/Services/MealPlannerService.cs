@@ -147,6 +147,8 @@ namespace Infrastructure.Services
 
                     if (attempt == maxRetries)
                         throw new RecipeScribeException(ErrorType.LlmFailure, $"Не удалось составить меню после {maxRetries} попыток.", ex);
+
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
                 }
             }
 
@@ -247,6 +249,8 @@ namespace Infrastructure.Services
 
                     if (attempt == maxRetries)
                         throw;
+
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
                 }
             }
 

@@ -3,6 +3,7 @@ using Core.Exceptions;
 using Core.Models;
 using Microsoft.Extensions.Logging;
 using System.Text;
+using System.Text.Json;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -140,6 +141,27 @@ namespace TelegramBot
             {
                 string amount = string.IsNullOrWhiteSpace(ing.Amount) ? "" : $" — {ing.Amount}";
                 sb.AppendLine($"- {MarkdownHelper.Escape(ing.Name)}{amount}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(recipe.PreparationTips))
+            {
+                sb.AppendLine();
+                sb.AppendLine("### Подготовка ингредиентов:");
+
+                try
+                {
+                    var tips = JsonSerializer.Deserialize<List<PreparationTip>>(recipe.PreparationTips);
+
+                    if (tips != null)
+                    {
+                        foreach (var tip in tips)
+                            sb.AppendLine($"- **{MarkdownHelper.Escape(tip.Ingredient)}:** {MarkdownHelper.Escape(tip.Tip)}");
+                    }
+                }
+                catch
+                {
+                    sb.AppendLine("_Не удалось отобразить советы по подготовке._");
+                }
             }
 
             sb.AppendLine();

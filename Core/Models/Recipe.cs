@@ -9,6 +9,7 @@
         public bool IsLunch { get; set; }
         public bool IsDinner { get; set; }
         public bool IsSnack { get; set; }
+        public string? PreparationTips { get; set; }
         public List<Ingredient> Ingredients { get; set; } = new();
         public List<RecipeStep> Steps { get; set; } = new();
     }
