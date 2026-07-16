@@ -5,7 +5,7 @@ The entire JSON schema (including title, ingredients, and steps) must be transla
 RETURN THE ANSWER STRICTLY IN THE SPECIFIED JSON FORMAT. No unnecessary text.
 Each ingredient must be a strict object with the fields "Name" (the name) and "Amount" (quantity/measure).
 Each step must be a strict object with the fields "Number" (the numeric step number) and "Description" (the description of the action).
-Interpret "ст л" strictly as "столовые ложки" (tablespoons), and "ч л" strictly as "чайные ложки" (teaspoons). Do not translate them as "стаканы" (cups).
+Interpret "СЃС‚. Р»." strictly as "СЃС‚РѕР»РѕРІР°СЏ Р»РѕР¶РєР°" (tablespoons), and "С‡. Р»." strictly as "С‡Р°Р№РЅР°СЏ Р»РѕР¶РєР°" (teaspoons). Do not translate them as "СЃС‚Р°РєР°РЅС‹" (cups).
 If the input text (description or transcript) does NOT contain a clear, explicit title for the recipe, analyze the ingredients and steps, and invent a short, appealing, and accurate title for the dish in {language} (suitable for a cookbook). Do not leave the title empty, and do not use generic placeholders like "Video by...", "No recipe", or "#".
 Each recipe must be analyzed to determine which meals it is suitable for. Set the following boolean fields strictly:
 - "IsBreakfast": true/false (suitable for breakfast: e.g., porridges, eggs, pancakes, cottage cheese)

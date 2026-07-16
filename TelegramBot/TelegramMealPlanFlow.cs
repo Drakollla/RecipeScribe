@@ -1,5 +1,6 @@
 ﻿using Core.Contracts;
 using Core.Enums;
+using Core.Exceptions;
 using Core.Models;
 using Microsoft.Extensions.Logging;
 using System.Text;
@@ -50,10 +51,15 @@ namespace TelegramBot
                 await botClient.DeleteMessage(chatId, statusMessage.Id, cancellationToken: cancellationToken);
                 await botClient.SendMessage(chatId, formattedMenu, parseMode: Telegram.Bot.Types.Enums.ParseMode.Markdown, replyMarkup: keyboard, cancellationToken: cancellationToken);
             }
+            catch (RecipeScribeException ex)
+            {
+                _logger.LogError(ex, "Ошибка генерации меню для {ChatId}", chatId);
+                await botClient.EditMessageText(chatId, statusMessage.Id, $"{ex.Message}", cancellationToken: cancellationToken);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Ошибка генерации меню для {ChatId}", chatId);
-                await botClient.EditMessageText(chatId, statusMessage.Id, $"Не удалось составить меню: {ex.Message}", cancellationToken: cancellationToken);
+                await botClient.EditMessageText(chatId, statusMessage.Id, "Не удалось составить меню из-за внутренней ошибки.", cancellationToken: cancellationToken);
             }
         }
 
@@ -74,7 +80,7 @@ namespace TelegramBot
                 };
 
                 sb.AppendLine($"*{mealName}:*");
-                sb.AppendLine($"_{item.Recipe.Title}_");
+                sb.AppendLine($"_{MarkdownHelper.Escape(item.Recipe.Title)}_");
                 sb.AppendLine();
             }
 

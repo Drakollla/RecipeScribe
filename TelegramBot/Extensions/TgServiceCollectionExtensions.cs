@@ -20,6 +20,9 @@ namespace TelegramBot.Extensions
             services.AddTransient<TelegramRecipeFlow>();
             services.AddTransient<TelegramMealPlanFlow>();
 
+            services.AddScoped<IMessageCommand, StartCommand>();
+            services.AddScoped<IMessageCommand, HelpCommand>();
+            services.AddScoped<IMessageCommand, CancelCommand>();
             services.AddScoped<IMessageCommand, MenuCommand>();
             services.AddScoped<IMessageCommand, PlanAiCommand>();
             services.AddScoped<IMessageCommand, CustomDateMessageCommand>();

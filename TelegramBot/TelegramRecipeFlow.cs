@@ -1,4 +1,5 @@
 ﻿using Core.Contracts;
+using Core.Exceptions;
 using Core.Models;
 using Microsoft.Extensions.Logging;
 using System.Text;
@@ -56,10 +57,15 @@ namespace TelegramBot
                     cancellationToken: cancellationToken
                 );
             }
+            catch (RecipeScribeException ex)
+            {
+                _logger.LogError(ex, "Ошибка при обработке {Url}", url);
+                await botClient.SendMessage(chatId, $"❌ {ex.Message}", cancellationToken: cancellationToken);
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Ошибка при обработке {Url}", url);
-                await botClient.SendMessage(chatId, $"Произошла ошибка при обработке: {ex.Message}", cancellationToken: cancellationToken);
+                await botClient.SendMessage(chatId, "❌ Неизвестная ошибка при обработке. Попробуйте другой URL или повторите позже.", cancellationToken: cancellationToken);
             }
         }
 
@@ -116,7 +122,7 @@ namespace TelegramBot
             await botClient.SendDocument(
                 chatId: chatId,
                 document: InputFile.FromStream(stream, fileName),
-                caption: $"📖 *Рецепт:* _{recipe.Title}_",
+                caption: $"📖 *Рецепт:* _{MarkdownHelper.Escape(recipe.Title)}_",
                 parseMode: Telegram.Bot.Types.Enums.ParseMode.Markdown,
                 cancellationToken: cancellationToken
             );
@@ -125,7 +131,7 @@ namespace TelegramBot
         public string FormatRecipeToMarkdown(Recipe recipe)
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"# {recipe.Title.ToUpper()}");
+            sb.AppendLine($"# {MarkdownHelper.Escape(recipe.Title.ToUpper())}");
             sb.AppendLine();
 
             sb.AppendLine("### Ингредиенты:");
@@ -133,14 +139,14 @@ namespace TelegramBot
             foreach (var ing in recipe.Ingredients)
             {
                 string amount = string.IsNullOrWhiteSpace(ing.Amount) ? "" : $" — {ing.Amount}";
-                sb.AppendLine($"- {ing.Name}{amount}");
+                sb.AppendLine($"- {MarkdownHelper.Escape(ing.Name)}{amount}");
             }
 
             sb.AppendLine();
             sb.AppendLine("### Шаги приготовления:");
 
             foreach (var step in recipe.Steps.OrderBy(s => s.Number))
-                sb.AppendLine($"{step.Number}. {step.Description}");
+                sb.AppendLine($"{step.Number}. {MarkdownHelper.Escape(step.Description)}");
 
             return sb.ToString();
         }

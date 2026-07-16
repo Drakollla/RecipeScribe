@@ -1,5 +1,6 @@
 ﻿using Core.Contracts;
 using Core.Enums;
+using Core.Exceptions;
 using Core.Helpers;
 using Core.Models;
 using Infrastructure.Database;
@@ -19,6 +20,8 @@ namespace Infrastructure.Services
 {
     public class MealPlannerService : IMealPlannerService
     {
+        const int maxRetries = 5;
+
         private readonly RecipeDbContext _dbContext;
         private readonly Kernel _kernel;
         private readonly IOptions<LlmSettings> _llmSettings;
@@ -87,7 +90,7 @@ namespace Infrastructure.Services
             var allCandidates = breakfasts.Concat(lunches).Concat(dinners).DistinctBy(r => r.Id).ToList();
 
             if (!allCandidates.Any())
-                throw new InvalidOperationException("В базе данных нет рецептов, соответствующих категориям приемов пищи.");
+                throw new RecipeScribeException(ErrorType.ParseError, "В базе данных нет рецептов, соответствующих категориям приемов пищи.");
 
             var llmResponse = await AskLlmForPlanAsync(allCandidates, userRequest);
             var mealRecipes = new Dictionary<MealType, Guid>();
@@ -115,22 +118,39 @@ namespace Infrastructure.Services
                 .Replace("{userRequest}", userRequest)
                 .Replace("{targetLanguage}", _llmSettings.Value.TargetLanguage);
 
-            var rawResponse = await CallLlmAsync(prompt);
-            var cleanJson = rawResponse.Replace("```json", "").Replace("```", "").Trim();
-
-            try
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
-                var response = JsonSerializer.Deserialize<LlmMealPlanResponse>(cleanJson, new JsonSerializerOptions
+                try
                 {
-                    PropertyNameCaseInsensitive = true
-                });
+                    var rawResponse = await CallLlmAsync(prompt);
+                    var cleanJson = rawResponse.Replace("```json", "").Replace("```", "").Trim();
 
-                return response ?? throw new InvalidOperationException("Нейросеть вернула пустой ответ.");
+                    var response = JsonSerializer.Deserialize<LlmMealPlanResponse>(cleanJson, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    return response ?? throw new RecipeScribeException(ErrorType.LlmFailure, "Нейросеть вернула пустой ответ.");
+                }
+                catch (HttpRequestException ex) when (IsClientError(ex))
+                {
+                    _logger.LogError(ex, "[Планировщик] Неисправимая ошибка HTTP, прекращаю попытки");
+                    throw;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[Планировщик] Попытка {Attempt}/{MaxRetries} завершилась ошибкой", attempt, maxRetries);
+
+                    if (attempt == maxRetries)
+                        throw new RecipeScribeException(ErrorType.LlmFailure, $"Не удалось составить меню после {maxRetries} попыток.", ex);
+                }
             }
-            catch (JsonException ex)
-            {
-                throw new InvalidOperationException($"Не удалось разобрать ответ от ИИ: {rawResponse}", ex);
-            }
+
+            throw new RecipeScribeException(ErrorType.LlmFailure, "Не удалось составить меню.");
         }
 
 
@@ -189,8 +209,6 @@ namespace Infrastructure.Services
                 .ToListAsync();
         }
 
-     
-
         private async Task<string> CallLlmAsync(string prompt)
         {
             var chatService = _kernel.GetRequiredService<IChatCompletionService>();
@@ -206,6 +224,37 @@ namespace Infrastructure.Services
             var response = await chatService.GetChatMessageContentAsync(history, executionSettings, _kernel);
             return response.Content ?? string.Empty;
         }
+
+        private async Task<string> CallLlmWithRetryAsync(string prompt)
+        {
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    return await CallLlmAsync(prompt);
+                }
+                catch (HttpRequestException ex) when (IsClientError(ex))
+                {
+                    throw;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[Список покупок] Попытка LLM {Attempt}/{MaxRetries} завершилась ошибкой", attempt, maxRetries);
+
+                    if (attempt == maxRetries)
+                        throw;
+                }
+            }
+
+            throw new RecipeScribeException(ErrorType.LlmFailure, "Не удалось вызвать LLM.");
+        }
+
+        private static bool IsClientError(HttpRequestException ex) =>
+            ex.StatusCode.HasValue && (int)ex.StatusCode.Value >= 400 && (int)ex.StatusCode.Value < 500;
 
         public async Task<MealPlan?> GetPlanForDateAsync(long telegramChatId, DateOnly date)
         {
@@ -259,11 +308,11 @@ namespace Infrastructure.Services
 
             try
             {
-                var rawResponse = await CallLlmAsync(prompt);
+                var rawResponse = await CallLlmWithRetryAsync(prompt);
                 var categorizedList = rawResponse.Trim();
 
                 if (string.IsNullOrWhiteSpace(categorizedList))
-                    throw new Exception("ИИ вернул пустой ответ (null or whitespace).");
+                    throw new RecipeScribeException(ErrorType.LlmFailure, "ИИ вернул пустой ответ.");
 
                 return $"*СПИСОК ПОКУПОК ПО ОТДЕЛАМ:*\n\n{categorizedList}";
             }

@@ -40,9 +40,12 @@ namespace TelegramBot
 
             await _botClient.SetMyCommands(
             [
+                new BotCommand { Command = "start", Description = "Запустить бота" },
+                new BotCommand { Command = "help", Description = "Показать справку" },
                 new BotCommand { Command = "menu", Description = "Показать меню на сегодня" },
                 new BotCommand { Command = "plan_ai", Description = "Спланировать меню через ИИ" },
-                new BotCommand { Command = "search", Description = "Поиск рецептов по ингредиентам" }
+                new BotCommand { Command = "search", Description = "Поиск рецептов по ингредиентам" },
+                new BotCommand { Command = "cancel", Description = "Отменить текущее действие" }
             ], cancellationToken: stoppingToken);
 
             var receiverOptions = new ReceiverOptions

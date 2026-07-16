@@ -128,9 +128,18 @@ public class RecipeExtractorService : IRecipeExtractorService
                 if (recipe != null && !IsRecipeMissing(recipe))
                     return recipe;
             }
+            catch (HttpRequestException ex) when (IsClientError(ex))
+            {
+                _logger.LogError(ex, "[ИИ] Неисправимая ошибка HTTP, прекращаю попытки");
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[ИИ] Попытка {Attempt}/{MaxRetries} завершилась ошибкой парсинга JSON", attempt, maxRetries);
+                _logger.LogWarning(ex, "[ИИ] Попытка {Attempt}/{MaxRetries} завершилась ошибкой", attempt, maxRetries);
 
                 if (attempt == maxRetries)
                     throw;
@@ -140,6 +149,9 @@ public class RecipeExtractorService : IRecipeExtractorService
         }
         return null;
     }
+
+    private static bool IsClientError(HttpRequestException ex) =>
+        ex.StatusCode.HasValue && (int)ex.StatusCode.Value >= 400 && (int)ex.StatusCode.Value < 500;
 
     private bool IsRecipeMissing(Recipe? recipe)
     {
