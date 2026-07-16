@@ -1,6 +1,7 @@
 ﻿using Core.Contracts;
 using Core.Enums;
 using Core.Exceptions;
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Text;
 using Whisper.net;
@@ -10,9 +11,15 @@ namespace Infrastructure
 {
     public class WhisperTranscriber : ITranscriber
     {
+        private readonly ILogger<WhisperTranscriber> _logger;
         private static readonly string ToolsDir = Path.GetFullPath(
             Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Core", "Tools"));
         private static readonly string ModelPath = Path.Combine(ToolsDir, "ggml-base.bin");
+
+        public WhisperTranscriber(ILogger<WhisperTranscriber> logger)
+        {
+            _logger = logger;
+        }
 
         public async Task<string> TranscribeAsync(string audioFilePath)
         {
@@ -38,13 +45,13 @@ namespace Infrastructure
             if (File.Exists(ModelPath))
                 return;
 
-            Console.WriteLine("Модель для транскрипции (ggml-base.bin) не найдена. Скачиваю...");
+            _logger.LogInformation("Модель для транскрипции (ggml-base.bin) не найдена. Скачиваю...");
 
             using var modelStream = await WhisperGgmlDownloader.Default.GetGgmlModelAsync(GgmlType.Base);
             using var fileWriter = File.OpenWrite(ModelPath);
 
             await modelStream.CopyToAsync(fileWriter);
-            Console.WriteLine("Модель успешно загружена.");
+            _logger.LogInformation("Модель успешно загружена.");
         }
 
         private async Task<string> ConvertToWavAsync(string audioFilePath)
@@ -52,7 +59,7 @@ namespace Infrastructure
             string wavPath = Path.ChangeExtension(audioFilePath, ".wav");
             string ffmpegBin = Path.Combine(ToolsDir, OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg");
 
-            Console.WriteLine("Конвертирую аудио в WAV формат...");
+            _logger.LogInformation("Конвертирую аудио в WAV формат...");
 
             using var process = Process.Start(new ProcessStartInfo
             {
@@ -79,7 +86,7 @@ namespace Infrastructure
 
         private async Task<string> TranscribeWavAsync(string wavPath)
         {
-            Console.WriteLine("Начиналось распознавание речи (это может занять некоторое время)...");
+            _logger.LogInformation("Начинаю распознавание речи (это может занять некоторое время)...");
 
             var resultText = new StringBuilder();
 

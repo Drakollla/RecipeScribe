@@ -1,6 +1,7 @@
 ﻿using Core.Contracts;
 using Core.Helpers;
 using Core.Models;
+using Microsoft.Extensions.Logging;
 using System.Text;
 
 namespace Infrastructure.Services;
@@ -13,17 +14,20 @@ public class RecipeExtractorService : IRecipeExtractorService
     private readonly ITranscriber _transcriber;
     private readonly IRecipeParser _parser;
     private readonly IRecipeRepository _repository;
+    private readonly ILogger<RecipeExtractorService> _logger;
 
     public RecipeExtractorService(
         IVideoDownloader downloader,
         ITranscriber transcriber,
         IRecipeParser parser,
-        IRecipeRepository repository)
+        IRecipeRepository repository,
+        ILogger<RecipeExtractorService> logger)
     {
         _downloader = downloader;
         _transcriber = transcriber;
         _parser = parser;
         _repository = repository;
+        _logger = logger;
     }
 
     public async Task<Recipe?> ExtractAndSaveRecipeAsync(string url, Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
@@ -126,7 +130,7 @@ public class RecipeExtractorService : IRecipeExtractorService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ИИ] Попытка {attempt}/{maxRetries} завершилась ошибкой парсинга JSON: {ex.Message}");
+                _logger.LogWarning(ex, "[ИИ] Попытка {Attempt}/{MaxRetries} завершилась ошибкой парсинга JSON", attempt, maxRetries);
 
                 if (attempt == maxRetries)
                     throw;

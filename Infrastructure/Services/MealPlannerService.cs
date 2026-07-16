@@ -5,6 +5,7 @@ using Core.Models;
 using Infrastructure.Database;
 using Infrastructure.Settings;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
@@ -21,16 +22,19 @@ namespace Infrastructure.Services
         private readonly RecipeDbContext _dbContext;
         private readonly Kernel _kernel;
         private readonly IOptions<LlmSettings> _llmSettings;
+        private readonly ILogger<MealPlannerService> _logger;
 
         private record RecipeCandidateDto(Guid Id, string Title);
 
         public MealPlannerService(RecipeDbContext dbContext,
             Kernel kernel,
-            IOptions<LlmSettings> llmSettings)
+            IOptions<LlmSettings> llmSettings,
+            ILogger<MealPlannerService> logger)
         {
             _dbContext = dbContext;
             _kernel = kernel;
             _llmSettings = llmSettings;
+            _logger = logger;
         }
 
         public async Task<MealPlan> CreatePlanManualAsync(long telegramChatId, DateOnly date, Dictionary<MealType, Guid> mealRecipes)
@@ -185,17 +189,7 @@ namespace Infrastructure.Services
                 .ToListAsync();
         }
 
-        //private async Task<string> CallLlmAsync(string prompt)
-        //{
-        //    var chatService = _kernel.GetRequiredService<IChatCompletionService>();
-
-        //    var history = new ChatHistory();
-        //    history.AddUserMessage(prompt);
-
-        //    var response = await chatService.GetChatMessageContentAsync(history, null, _kernel);
-        //    return response.Content ?? string.Empty;
-        //}
-
+     
 
         private async Task<string> CallLlmAsync(string prompt)
         {
@@ -204,13 +198,11 @@ namespace Infrastructure.Services
             var history = new ChatHistory();
             history.AddUserMessage(prompt);
 
-            // Принудительно задаем низкую температуру для стабильности ответов ИИ
             var executionSettings = new OpenAIPromptExecutionSettings
             {
                 Temperature = 0.1f
             };
 
-            // Передаем настройки вторым параметром вместо null
             var response = await chatService.GetChatMessageContentAsync(history, executionSettings, _kernel);
             return response.Content ?? string.Empty;
         }
@@ -277,7 +269,7 @@ namespace Infrastructure.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Ошибка ИИ при категоризации списка покупок]: {ex.Message}");
+                _logger.LogError(ex, "[Ошибка ИИ при категоризации списка покупок]");
 
                 var listOfIngredients = new StringBuilder();
                 listOfIngredients.AppendLine("*СПИСОК ПОКУПОК (без сортировки по отделам):*");

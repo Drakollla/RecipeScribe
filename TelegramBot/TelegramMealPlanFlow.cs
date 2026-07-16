@@ -1,6 +1,7 @@
 ﻿using Core.Contracts;
 using Core.Enums;
 using Core.Models;
+using Microsoft.Extensions.Logging;
 using System.Text;
 using Telegram.Bot;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -10,10 +11,12 @@ namespace TelegramBot
     public class TelegramMealPlanFlow
     {
         private readonly IMealPlannerService _mealPlannerService;
+        private readonly ILogger<TelegramMealPlanFlow> _logger;
 
-        public TelegramMealPlanFlow(IMealPlannerService mealPlannerService)
+        public TelegramMealPlanFlow(IMealPlannerService mealPlannerService, ILogger<TelegramMealPlanFlow> logger)
         {
             _mealPlannerService = mealPlannerService;
+            _logger = logger;
         }
 
         public async Task ShowTodayMenuAsync(ITelegramBotClient botClient, long chatId, CancellationToken cancellationToken)
@@ -49,7 +52,7 @@ namespace TelegramBot
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Ошибка генерации меню для {chatId}: {ex.Message}");
+                _logger.LogError(ex, "Ошибка генерации меню для {ChatId}", chatId);
                 await botClient.EditMessageText(chatId, statusMessage.Id, $"Не удалось составить меню: {ex.Message}", cancellationToken: cancellationToken);
             }
         }

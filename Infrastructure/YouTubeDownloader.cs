@@ -2,6 +2,7 @@
 using Core.Enums;
 using Core.Exceptions;
 using Core.Helpers;
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using YoutubeDLSharp;
 using YoutubeDLSharp.Options;
@@ -10,11 +11,17 @@ namespace Infrastructure
 {
     public class YouTubeDownloader : IVideoDownloader
     {
+        private readonly ILogger<YouTubeDownloader> _logger;
         private static readonly string ToolsDir = Path.GetFullPath(
             Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Core", "Tools"));
         private static readonly string YtdlpPath = Path.Combine(ToolsDir, BinaryName("yt-dlp"));
         private static readonly string FfmpegPath = Path.Combine(ToolsDir, BinaryName("ffmpeg"));
         private static readonly string AudioDir = Path.Combine(AppContext.BaseDirectory, "DownloadedAudio");
+
+        public YouTubeDownloader(ILogger<YouTubeDownloader> logger)
+        {
+            _logger = logger;
+        }
 
         public async Task<ViewMetadata> DownloadAudioAsync(string videoUrl)
         {
@@ -52,7 +59,7 @@ namespace Infrastructure
 
             var options = new OptionSet
             {
-                Output = Path.Combine(AudioDir, "audio.%(ext)s")
+                Output = Path.Combine(AudioDir, $"audio_{videoId}.%(ext)s")
             };
 
             var downloadResult = await ytdl.RunAudioDownload(
@@ -106,20 +113,20 @@ namespace Infrastructure
             return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
         }
 
-        private static async Task EnsureBinariesAsync()
+        private async Task EnsureBinariesAsync()
         {
             Directory.CreateDirectory(ToolsDir);
             CleanOldCacheFiles(AudioDir);
 
             if (!File.Exists(YtdlpPath))
             {
-                Console.WriteLine("yt-dlp не найден. Скачиваю...");
+                _logger.LogInformation("yt-dlp не найден. Скачиваю...");
                 await Utils.DownloadYtDlp(ToolsDir);
             }
 
             if (!File.Exists(FfmpegPath))
             {
-                Console.WriteLine("ffmpeg не найден. Скачиваю...");
+                _logger.LogInformation("ffmpeg не найден. Скачиваю...");
                 await Utils.DownloadFFmpeg(ToolsDir);
             }
         }

@@ -1,5 +1,6 @@
 ﻿using Core.Contracts;
 using Core.Models;
+using Microsoft.Extensions.Logging;
 using System.Text;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -11,13 +12,16 @@ namespace TelegramBot
     {
         private readonly IRecipeExtractorService _recipeExtractor;
         private readonly IRecipeRepository _repository;
+        private readonly ILogger<TelegramRecipeFlow> _logger;
 
         public TelegramRecipeFlow(
             IRecipeExtractorService recipeExtractor,
-            IRecipeRepository repository)
+            IRecipeRepository repository,
+            ILogger<TelegramRecipeFlow> logger)
         {
             _recipeExtractor = recipeExtractor;
             _repository = repository;
+            _logger = logger;
         }
 
         public async Task ProcessVideoRecipeAsync(ITelegramBotClient botClient, long chatId, string url, CancellationToken cancellationToken)
@@ -54,7 +58,7 @@ namespace TelegramBot
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Ошибка при обработке {url}: {ex.Message}");
+                _logger.LogError(ex, "Ошибка при обработке {Url}", url);
                 await botClient.SendMessage(chatId, $"Произошла ошибка при обработке: {ex.Message}", cancellationToken: cancellationToken);
             }
         }
