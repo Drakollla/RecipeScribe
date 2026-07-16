@@ -5,6 +5,8 @@
         None,
         WaitingForCustomDate,
         WaitingForAiPreferences,
-        WaitingForSearchIngredients
+        WaitingForSearchIngredients,
+        WaitingForSubstituteIngredient,
+        WaitingForSubstituteRecipe
     }
 }

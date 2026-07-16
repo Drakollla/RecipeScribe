@@ -30,6 +30,9 @@ namespace TelegramBot.Extensions
             services.AddScoped<IMessageCommand, SearchIngredientsCommand>();
             services.AddScoped<IMessageCommand, RecipeUrlCommand>();
             services.AddScoped<IMessageCommand, AiPreferencesMessageCommand>();
+            services.AddScoped<IMessageCommand, SubstituteCommand>();
+            services.AddScoped<IMessageCommand, SubstituteIngredientCommand>();
+            services.AddScoped<IMessageCommand, SubstituteRecipeCommand>();
 
             services.AddScoped<ICallbackQuery, ShowRecipeCallback>();
             services.AddScoped<ICallbackQuery, GetShoppingListCallback>();

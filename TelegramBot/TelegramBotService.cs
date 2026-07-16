@@ -45,6 +45,7 @@ namespace TelegramBot
                 new BotCommand { Command = "menu", Description = "Показать меню на сегодня" },
                 new BotCommand { Command = "plan_ai", Description = "Спланировать меню через ИИ" },
                 new BotCommand { Command = "search", Description = "Поиск рецептов по ингредиентам" },
+                new BotCommand { Command = "substitute", Description = "Замена ингредиента в рецепте" },
                 new BotCommand { Command = "cancel", Description = "Отменить текущее действие" }
             ], cancellationToken: stoppingToken);
 

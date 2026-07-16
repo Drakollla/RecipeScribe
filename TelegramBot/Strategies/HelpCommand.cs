@@ -19,6 +19,7 @@ public class HelpCommand : IMessageCommand
             "/menu — показать меню на сегодня\n" +
             "/plan_ai — спланировать меню через ИИ\n" +
             "/search — поиск рецептов по ингредиентам\n" +
+            "/substitute — замена ингредиента (например: /substitute курица Цезарь)\n" +
             "/cancel — отменить текущее действие\n\n" +
             "Просто прислать ссылку на YouTube-видео с рецептом для добавления в базу.",
             cancellationToken: cancellationToken);
