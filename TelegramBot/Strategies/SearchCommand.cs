@@ -1,4 +1,4 @@
-﻿using Core.Enums;
+using Core.Enums;
 using Core.Helpers;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -17,7 +17,7 @@ namespace TelegramBot.Strategies
             await botClient.SendMessage(
                 chatId: message.Chat.Id,
                 text: TelegramUiElements.SearchPrompt,
-                parseMode: ParseMode.Markdown,
+                parseMode: ParseMode.Html,
                 cancellationToken: cancellationToken
             );
         }

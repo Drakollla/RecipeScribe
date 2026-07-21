@@ -18,7 +18,6 @@ public static class ServiceCollectionExtensions
         services.AddDatabaseServices(configuration);
         services.AddLlmServices(configuration);
 
-        services.AddTransient<RecipeRepository>();
         services.AddTransient<IVideoDownloader, YouTubeDownloader>();
         services.AddTransient<ITranscriber, WhisperTranscriber>();
         services.AddTransient<IRecipeExporter, MarkdownRecipeExporter>();
@@ -54,7 +53,7 @@ public static class ServiceCollectionExtensions
         services.AddKernelWithProvider(configuration);
 
         services.AddTransient<IRecipeParser, RecipeParser>();
-        services.AddTransient<ISubstitutionService, LlmSubstitutionService>();
+        services.AddTransient<IIngredientSubstitutor, LlmSubstitutionService>();
 
         return services;
     }

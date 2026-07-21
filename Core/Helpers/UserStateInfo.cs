@@ -1,6 +1,6 @@
 ﻿using Core.Enums;
 
-﻿namespace Core.Helpers
+namespace Core.Helpers
 {
     public class UserStateInfo
     {

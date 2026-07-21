@@ -155,7 +155,7 @@ namespace Infrastructure
             foreach (var file in files)
             {
                 var fileInfo = new FileInfo(file);
-                
+
                 if (fileInfo.LastWriteTimeUtc < threshold)
                     fileInfo.Delete();
             }

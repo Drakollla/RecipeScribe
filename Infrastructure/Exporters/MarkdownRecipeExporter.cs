@@ -24,7 +24,7 @@ namespace Infrastructure.Exporters
             sb.AppendLine();
             sb.AppendLine("## Шаги приготовления");
 
-            foreach(var step in recipe.Steps)
+            foreach (var step in recipe.Steps)
                 sb.AppendLine($"{step.Number}. {step.Description}");
 
             await File.WriteAllTextAsync(outputPath, sb.ToString(), Encoding.UTF8);

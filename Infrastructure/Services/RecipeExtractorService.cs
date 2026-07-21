@@ -33,7 +33,7 @@ public class RecipeExtractorService : IRecipeExtractorService
     public async Task<Recipe?> ExtractAndSaveRecipeAsync(string url, Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
     {
         var existingRecipe = await _repository.GetRecipeByUrlAsync(url);
-        
+
         if (existingRecipe != null)
         {
             if (onProgress != null)

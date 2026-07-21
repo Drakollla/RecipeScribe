@@ -1,6 +1,3 @@
-п»їusing Infrastructure.Extensions;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Telegram.Bot;
 using TelegramBot.Strategies;
 
@@ -10,10 +7,8 @@ namespace TelegramBot.Extensions
     {
         public static IServiceCollection AddTelegramServices(this IServiceCollection services, IConfiguration configuration)
         {
-            ServiceCollectionExtensions.AddInfrastructureServices(services, configuration);
-
             string telegramToken = configuration["ApiKeys:Telegram"]
-                ?? throw new InvalidOperationException("РўРѕРєРµРЅ Telegram РЅРµ РЅР°Р№РґРµРЅ РІ РєРѕРЅС„РёРіСѓСЂР°С†РёРё (ApiKeys:Telegram).");
+                ?? throw new InvalidOperationException("Токен Telegram не найден в конфигурации (ApiKeys:Telegram).");
 
             services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(telegramToken));
 
