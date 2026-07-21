@@ -27,19 +27,16 @@ public class SubstitutionApiClient : ISubstitutionApiClient
             return null;
 
         if (!response.IsSuccessStatusCode)
-        {
-            await LogAndThrowAsync(response, $"{ingredient}/{recipeTitle}");
-            return null;
-        }
+            throw await LogAndCreateExceptionAsync(response, $"{ingredient}/{recipeTitle}");
 
         return await response.Content.ReadFromJsonAsync<SubstitutionDto>(cancellationToken: ct);
     }
 
-    private async Task LogAndThrowAsync(HttpResponseMessage response, string context = "")
+    private async Task<HttpRequestException> LogAndCreateExceptionAsync(HttpResponseMessage response, string context = "")
     {
         var body = await response.Content.ReadAsStringAsync();
         ErrorDto? error = null;
-        try { error = JsonSerializer.Deserialize<ErrorDto>(body, JsonOptions); } catch { }
+        try { error = JsonSerializer.Deserialize<ErrorDto>(body, JsonOptions); } catch (OperationCanceledException) { throw; } catch { }
 
         var errorType = error?.ErrorType ?? "Unknown";
         var message = error?.Error ?? body;
@@ -47,7 +44,7 @@ public class SubstitutionApiClient : ISubstitutionApiClient
         _logger.LogError("API error [{StatusCode}] {ErrorType} for {Context}: {Message}",
             (int)response.StatusCode, errorType, context, message);
 
-        throw new HttpRequestException(
+        return new HttpRequestException(
             $"{errorType}: {message}",
             null,
             response.StatusCode);

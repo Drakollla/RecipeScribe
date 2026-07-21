@@ -2,6 +2,7 @@
 using Core.Enums;
 using Core.Exceptions;
 using Core.Helpers;
+using Core.Tools;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using YoutubeDLSharp;
@@ -12,10 +13,8 @@ namespace Infrastructure
     public class YouTubeDownloader : IVideoDownloader
     {
         private readonly ILogger<YouTubeDownloader> _logger;
-        private static readonly string ToolsDir = Path.GetFullPath(
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Core", "Tools"));
-        private static readonly string YtdlpPath = Path.Combine(ToolsDir, BinaryName("yt-dlp"));
-        private static readonly string FfmpegPath = Path.Combine(ToolsDir, BinaryName("ffmpeg"));
+        private static readonly string YtdlpPath = Path.Combine(ToolPaths.Directory, BinaryName("yt-dlp"));
+        private static readonly string FfmpegPath = Path.Combine(ToolPaths.Directory, BinaryName("ffmpeg"));
         private static readonly string AudioDir = Path.Combine(AppContext.BaseDirectory, "DownloadedAudio");
 
         public YouTubeDownloader(ILogger<YouTubeDownloader> logger)
@@ -23,9 +22,9 @@ namespace Infrastructure
             _logger = logger;
         }
 
-        public async Task<ViewMetadata> DownloadAudioAsync(string videoUrl)
+        public async Task<ViewMetadata> DownloadAudioAsync(string videoUrl, CancellationToken ct = default)
         {
-            await EnsureBinariesAsync();
+            await EnsureBinariesAsync(ct);
 
             Directory.CreateDirectory(AudioDir);
 
@@ -39,14 +38,14 @@ namespace Infrastructure
             var video = await ytdl.RunVideoDataFetch(videoUrl);
 
             if (!video.Success)
-                throw new RecipeScribeException(ErrorType.VideoNotFound, $"Не удалось получить данные о видео: {string.Join("; ", video.ErrorOutput)}");
+                throw new RecipeScribeException(ErrorType.VideoNotFound, $"Failed to retrieve video data: {string.Join("; ", video.ErrorOutput)}");
 
             string videoId = video.Data.ID;
             string transcriptPath = Path.Combine(AudioDir, $"{videoId}.txt");
 
             if (File.Exists(transcriptPath))
             {
-                string cachedText = await File.ReadAllTextAsync(transcriptPath, System.Text.Encoding.UTF8);
+                string cachedText = await File.ReadAllTextAsync(transcriptPath, System.Text.Encoding.UTF8, ct);
 
                 return new ViewMetadata
                 {
@@ -68,7 +67,7 @@ namespace Infrastructure
             if (!downloadResult.Success)
             {
                 string errorDetails = string.Join(Environment.NewLine, downloadResult.ErrorOutput);
-                throw new RecipeScribeException(ErrorType.Network, $"Не удалось скачать аудио. Ошибка: {errorDetails}");
+                throw new RecipeScribeException(ErrorType.Network, $"Failed to download audio: {errorDetails}");
             }
 
             return new ViewMetadata
@@ -80,9 +79,9 @@ namespace Infrastructure
             };
         }
 
-        public async Task<string?> GetFirstCommentAsync(string videoUrl)
+        public async Task<string?> GetFirstCommentAsync(string videoUrl, CancellationToken ct = default)
         {
-            await EnsureBinariesAsync();
+            await EnsureBinariesAsync(ct);
 
             var startInfo = new ProcessStartInfo
             {
@@ -98,49 +97,36 @@ namespace Infrastructure
             using var process = Process.Start(startInfo);
 
             if (process == null)
-                throw new RecipeScribeException(ErrorType.Network, "Не удалось запустить yt-dlp для получения комментариев");
+                throw new RecipeScribeException(ErrorType.Network, "Failed to start yt-dlp for retrieving comments");
 
-            string output = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            string output = await process.StandardOutput.ReadToEndAsync(ct);
+            await process.WaitForExitAsync(ct);
 
             if (process.ExitCode != 0)
             {
-                string error = await process.StandardError.ReadToEndAsync();
+                string error = await process.StandardError.ReadToEndAsync(ct);
                 throw new RecipeScribeException(ErrorType.VideoNotFound,
-                    $"yt-dlp не смог получить комментарии: {error}");
+                    $"yt-dlp failed to retrieve comments: {error}");
             }
 
             return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
         }
 
-        private async Task EnsureBinariesAsync()
+        private async Task EnsureBinariesAsync(CancellationToken ct = default)
         {
-            Directory.CreateDirectory(ToolsDir);
+            Directory.CreateDirectory(ToolPaths.Directory);
             CleanOldCacheFiles(AudioDir);
 
             if (!File.Exists(YtdlpPath))
             {
                 _logger.LogInformation("yt-dlp не найден. Скачиваю...");
-                await Utils.DownloadYtDlp(ToolsDir);
+                await Utils.DownloadYtDlp(ToolPaths.Directory);
             }
 
             if (!File.Exists(FfmpegPath))
             {
                 _logger.LogInformation("ffmpeg не найден. Скачиваю...");
-                await Utils.DownloadFFmpeg(ToolsDir);
-            }
-        }
-
-        private static void CleanDirectory(string path)
-        {
-            if (Directory.Exists(path))
-            {
-                foreach (var file in Directory.GetFiles(path))
-                    File.Delete(file);
-            }
-            else
-            {
-                Directory.CreateDirectory(path);
+                await Utils.DownloadFFmpeg(ToolPaths.Directory);
             }
         }
 

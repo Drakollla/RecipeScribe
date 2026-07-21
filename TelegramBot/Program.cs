@@ -1,7 +1,5 @@
 using Serilog;
 using TelegramBot;
-using TelegramBot.ApiClients;
-using TelegramBot.Contracts;
 using TelegramBot.Extensions;
 
 Log.Logger = new LoggerConfiguration()
@@ -18,39 +16,6 @@ try
         .AddUserSecrets<Program>();
 
     builder.Services.AddSerilog();
-
-    var apiBaseUrl = builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5000";
-
-    builder.Services.AddHttpClient("RecipeScribeApi", client =>
-    {
-        client.BaseAddress = new Uri(apiBaseUrl);
-        client.Timeout = TimeSpan.FromMinutes(5);
-    });
-
-    builder.Services.AddTransient<IRecipeApiClient>(sp =>
-    {
-        var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
-        var http = httpFactory.CreateClient("RecipeScribeApi");
-        var logger = sp.GetRequiredService<ILogger<RecipeApiClient>>();
-        return new RecipeApiClient(http, logger);
-    });
-
-    builder.Services.AddTransient<IMealPlanApiClient>(sp =>
-    {
-        var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
-        var http = httpFactory.CreateClient("RecipeScribeApi");
-        var logger = sp.GetRequiredService<ILogger<MealPlanApiClient>>();
-        return new MealPlanApiClient(http, logger);
-    });
-
-    builder.Services.AddTransient<ISubstitutionApiClient>(sp =>
-    {
-        var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
-        var http = httpFactory.CreateClient("RecipeScribeApi");
-        var logger = sp.GetRequiredService<ILogger<SubstitutionApiClient>>();
-        return new SubstitutionApiClient(http, logger);
-    });
-
     builder.Services.AddTelegramServices(builder.Configuration);
     builder.Services.AddHostedService<TelegramBotService>();
 

@@ -1,9 +1,8 @@
 ﻿using Core.Contracts;
 using Core.Models;
-using Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
 
-namespace RecipeScribe.Infrastructure.Database
+namespace Infrastructure.Database
 {
     public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
     {

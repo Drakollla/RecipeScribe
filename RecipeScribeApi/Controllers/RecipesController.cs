@@ -1,9 +1,12 @@
 using Core.Contracts;
 using Core.Enums;
 using Core.Exceptions;
+using Core.Helpers;
+using Infrastructure.Settings;
 using Microsoft.AspNetCore.Mvc;
 using RecipeScribeApi.Mapping;
 using Shared.DTOs;
+using System.Text;
 
 namespace RecipeScribeApi.Controllers;
 
@@ -13,15 +16,18 @@ public class RecipesController : ControllerBase
 {
     private readonly IRecipeRepository _repository;
     private readonly IRecipeExtractorService _extractor;
+    private readonly ObsidianSettings _obsidianSettings;
     private readonly ILogger<RecipesController> _logger;
 
     public RecipesController(
         IRecipeRepository repository,
         IRecipeExtractorService extractor,
+        ObsidianSettings obsidianSettings,
         ILogger<RecipesController> logger)
     {
         _repository = repository;
         _extractor = extractor;
+        _obsidianSettings = obsidianSettings;
         _logger = logger;
     }
 
@@ -64,5 +70,37 @@ public class RecipesController : ControllerBase
             ?? throw new RecipeScribeException(ErrorType.ParseError, "Failed to extract recipe.");
 
         return CreatedAtRoute("GetRecipeById", new { id = recipe.Id }, recipe.ToDto());
+    }
+
+    [HttpPost("{id:guid}/export-to-obsidian")]
+    public async Task<IActionResult> ExportToObsidian(Guid id)
+    {
+        var recipe = await _repository.GetRecipeByIdAsync(id)
+            ?? throw new RecipeNotFoundException(id);
+
+        var vaultPath = _obsidianSettings.VaultPath;
+
+        if (string.IsNullOrWhiteSpace(vaultPath))
+            return BadRequest(new { error = "Obsidian vault path is not configured." });
+
+        var invalid = Path.GetInvalidFileNameChars();
+        var safeName = string.Concat(recipe.Title.Select(c => invalid.Contains(c) ? '_' : c));
+        
+        if (safeName.Length > 100) 
+            safeName = safeName[..100];
+        
+        safeName = safeName.TrimEnd('.');
+        
+        if (string.IsNullOrWhiteSpace(safeName))
+            safeName = "recipe";
+
+        var fullPath = Path.Combine(vaultPath, $"{safeName}.md");
+        var markdown = RecipeMarkdownBuilder.Build(recipe);
+        
+        await System.IO.File.WriteAllTextAsync(fullPath, markdown, Encoding.UTF8);
+
+        _logger.LogInformation("Recipe {Id} exported to Obsidian: {Path}", id, fullPath);
+        
+        return Ok(new { path = fullPath });
     }
 }

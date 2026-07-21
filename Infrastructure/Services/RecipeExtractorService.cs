@@ -8,8 +8,6 @@ namespace Infrastructure.Services;
 
 public class RecipeExtractorService : IRecipeExtractorService
 {
-    const int maxRetries = 5;
-
     private readonly IVideoDownloader _downloader;
     private readonly ITranscriber _transcriber;
     private readonly IRecipeParser _parser;
@@ -42,7 +40,7 @@ public class RecipeExtractorService : IRecipeExtractorService
             return existingRecipe;
         }
 
-        var metadata = await _downloader.DownloadAudioAsync(url);
+        var metadata = await _downloader.DownloadAudioAsync(url, cancellationToken);
         Recipe? recipe = null;
 
         if (!string.IsNullOrWhiteSpace(metadata.Description) && metadata.Description.Length > 100)
@@ -58,7 +56,7 @@ public class RecipeExtractorService : IRecipeExtractorService
             if (onProgress != null)
                 await onProgress("Рецепт в описании не найден. Проверяю закрепленный комментарий...");
 
-            string? firstComment = await _downloader.GetFirstCommentAsync(url);
+            string? firstComment = await _downloader.GetFirstCommentAsync(url, cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(firstComment))
                 recipe = await ParseRecipeAsync(firstComment, cancellationToken);
@@ -66,7 +64,7 @@ public class RecipeExtractorService : IRecipeExtractorService
 
         if (IsRecipeMissing(recipe))
         {
-            string transcript = await GetOrCreateTranscriptAsync(metadata, onProgress);
+            string transcript = await GetOrCreateTranscriptAsync(metadata, onProgress, cancellationToken);
 
             if (onProgress != null)
                 await onProgress("Распознавание завершено. Форматирую рецепт через ИИ...");
@@ -80,7 +78,7 @@ public class RecipeExtractorService : IRecipeExtractorService
         return recipe;
     }
 
-    private async Task<string> GetOrCreateTranscriptAsync(ViewMetadata metadata, Func<string, Task>? onProgress)
+    private async Task<string> GetOrCreateTranscriptAsync(ViewMetadata metadata, Func<string, Task>? onProgress, CancellationToken ct)
     {
         if (!string.IsNullOrEmpty(metadata.CachedTranscript))
         {
@@ -93,7 +91,7 @@ public class RecipeExtractorService : IRecipeExtractorService
         if (onProgress != null)
             await onProgress("Текст не найден. Запускаю локальное распознавание речи (Whisper)...");
 
-        string transcript = await _transcriber.TranscribeAsync(metadata.AudioFilePath);
+            string transcript = await _transcriber.TranscribeAsync(metadata.AudioFilePath, ct);
 
         string directory = Path.GetDirectoryName(metadata.AudioFilePath)!;
         string fileName = Path.GetFileNameWithoutExtension(metadata.AudioFilePath);
@@ -119,39 +117,13 @@ public class RecipeExtractorService : IRecipeExtractorService
 
     private async Task<Recipe?> ParseRecipeAsync(string text, CancellationToken cancellationToken)
     {
-        for (int attempt = 1; attempt <= maxRetries; attempt++)
-        {
-            try
-            {
-                var recipe = await _parser.ParseRecipeAsync(text);
-
-                if (recipe != null && !IsRecipeMissing(recipe))
-                    return recipe;
-            }
-            catch (HttpRequestException ex) when (IsClientError(ex))
-            {
-                _logger.LogError(ex, "[ИИ] Неисправимая ошибка HTTP, прекращаю попытки");
-                throw;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[ИИ] Попытка {Attempt}/{MaxRetries} завершилась ошибкой", attempt, maxRetries);
-
-                if (attempt == maxRetries)
-                    throw;
-
-                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), cancellationToken);
-            }
-        }
-        return null;
+        return await LlmRetryHelper.CallWithRetryAsync(
+            () => _parser.ParseRecipeAsync(text, cancellationToken),
+            validateResult: recipe => recipe != null && !IsRecipeMissing(recipe),
+            logger: _logger,
+            logPrefix: "ИИ",
+            ct: cancellationToken);
     }
-
-    private static bool IsClientError(HttpRequestException ex) =>
-        ex.StatusCode.HasValue && (int)ex.StatusCode.Value >= 400 && (int)ex.StatusCode.Value < 500;
 
     private bool IsRecipeMissing(Recipe? recipe)
     {

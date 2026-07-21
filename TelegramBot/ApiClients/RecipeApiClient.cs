@@ -23,10 +23,7 @@ public class RecipeApiClient : IRecipeApiClient
         var response = await _http.PostAsJsonAsync("/api/recipes/extract", new CreateRecipeDto(url), ct);
 
         if (!response.IsSuccessStatusCode)
-        {
-            await LogAndThrowAsync(response);
-            return null;
-        }
+            throw await LogAndCreateExceptionAsync(response);
 
         return await response.Content.ReadFromJsonAsync<RecipeDto>(cancellationToken: ct);
     }
@@ -37,10 +34,7 @@ public class RecipeApiClient : IRecipeApiClient
             $"/api/recipes/search?ingredients={Uri.EscapeDataString(ingredients)}", ct);
 
         if (!response.IsSuccessStatusCode)
-        {
-            await LogAndThrowAsync(response, ingredients);
-            return new();
-        }
+            throw await LogAndCreateExceptionAsync(response, ingredients);
 
         return await response.Content.ReadFromJsonAsync<List<RecipeDto>>(ct) ?? new();
     }
@@ -53,10 +47,7 @@ public class RecipeApiClient : IRecipeApiClient
             return null;
 
         if (!response.IsSuccessStatusCode)
-        {
-            await LogAndThrowAsync(response, id.ToString());
-            return null;
-        }
+            throw await LogAndCreateExceptionAsync(response, id.ToString());
 
         return await response.Content.ReadFromJsonAsync<RecipeDto>(cancellationToken: ct);
     }
@@ -66,19 +57,16 @@ public class RecipeApiClient : IRecipeApiClient
         var response = await _http.GetAsync("/api/recipes", ct);
 
         if (!response.IsSuccessStatusCode)
-        {
-            await LogAndThrowAsync(response, "all");
-            return new();
-        }
+            throw await LogAndCreateExceptionAsync(response, "all");
 
         return await response.Content.ReadFromJsonAsync<List<RecipeSummaryDto>>(ct) ?? new();
     }
 
-    private async Task LogAndThrowAsync(HttpResponseMessage response, string context = "")
+    private async Task<HttpRequestException> LogAndCreateExceptionAsync(HttpResponseMessage response, string context = "")
     {
         var body = await response.Content.ReadAsStringAsync();
         ErrorDto? error = null;
-        try { error = JsonSerializer.Deserialize<ErrorDto>(body, JsonOptions); } catch { }
+        try { error = JsonSerializer.Deserialize<ErrorDto>(body, JsonOptions); } catch (OperationCanceledException) { throw; } catch { }
 
         var errorType = error?.ErrorType ?? "Unknown";
         var message = error?.Error ?? body;
@@ -86,7 +74,7 @@ public class RecipeApiClient : IRecipeApiClient
         _logger.LogError("API error [{StatusCode}] {ErrorType} for {Context}: {Message}",
             (int)response.StatusCode, errorType, context, message);
 
-        throw new HttpRequestException(
+        return new HttpRequestException(
             $"{errorType}: {message}",
             null,
             response.StatusCode);

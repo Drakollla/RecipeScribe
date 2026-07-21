@@ -7,7 +7,6 @@ using Infrastructure.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using RecipeScribe.Infrastructure.Database;
 
 namespace Infrastructure.Extensions;
 
@@ -17,14 +16,17 @@ public static class ServiceCollectionExtensions
     {
         services.AddDatabaseServices(configuration);
         services.AddLlmServices(configuration);
+        var obsidianSettings = configuration.GetSection("Obsidian").Get<ObsidianSettings>() ?? new ObsidianSettings();
+        services.AddSingleton(obsidianSettings);
 
         services.AddTransient<IVideoDownloader, YouTubeDownloader>();
         services.AddTransient<ITranscriber, WhisperTranscriber>();
         services.AddTransient<IRecipeExporter, MarkdownRecipeExporter>();
 
+        services.AddScoped<IMealPlanRepository, MealPlanRepository>();
         services.AddScoped<IMealPlannerService, MealPlannerService>();
         services.AddScoped<IRecipeRepository, RecipeRepository>();
-        services.AddTransient<IRecipeExtractorService, RecipeExtractorService>();
+        services.AddScoped<IRecipeExtractorService, RecipeExtractorService>();
 
         return services;
     }

@@ -4,6 +4,6 @@ namespace Core.Contracts
 {
     public interface IRecipeParser
     {
-        Task<Recipe> ParseRecipeAsync(string transcript);
+        Task<Recipe> ParseRecipeAsync(string transcript, CancellationToken ct = default);
     }
 }

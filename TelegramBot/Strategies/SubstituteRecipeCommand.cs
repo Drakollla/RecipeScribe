@@ -1,4 +1,3 @@
-using System.Net;
 using Core.Enums;
 using Core.Helpers;
 using Telegram.Bot;

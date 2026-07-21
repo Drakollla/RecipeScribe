@@ -26,10 +26,7 @@ public class MealPlanApiClient : IMealPlanApiClient
             return null;
 
         if (!response.IsSuccessStatusCode)
-        {
-            await LogAndThrowAsync(response, $"{chatId}/{date}");
-            return null;
-        }
+            throw await LogAndCreateExceptionAsync(response, $"{chatId}/{date}");
 
         return await response.Content.ReadFromJsonAsync<MealPlanDto>(cancellationToken: ct);
     }
@@ -40,10 +37,7 @@ public class MealPlanApiClient : IMealPlanApiClient
         var response = await _http.PostAsJsonAsync($"/api/mealplans/generate?chatId={chatId}", request, ct);
 
         if (!response.IsSuccessStatusCode)
-        {
-            await LogAndThrowAsync(response, $"{chatId}/{date}");
-            return null!;
-        }
+            throw await LogAndCreateExceptionAsync(response, $"{chatId}/{date}");
 
         return await response.Content.ReadFromJsonAsync<MealPlanDto>(cancellationToken: ct)
             ?? throw new InvalidOperationException("API returned null for meal plan generation");
@@ -54,19 +48,16 @@ public class MealPlanApiClient : IMealPlanApiClient
         var response = await _http.GetAsync($"/api/mealplans/{planId}/shopping-list", ct);
 
         if (!response.IsSuccessStatusCode)
-        {
-            await LogAndThrowAsync(response, planId.ToString());
-            return "";
-        }
+            throw await LogAndCreateExceptionAsync(response, planId.ToString());
 
         return await response.Content.ReadAsStringAsync(ct);
     }
 
-    private async Task LogAndThrowAsync(HttpResponseMessage response, string context = "")
+    private async Task<HttpRequestException> LogAndCreateExceptionAsync(HttpResponseMessage response, string context = "")
     {
         var body = await response.Content.ReadAsStringAsync();
         ErrorDto? error = null;
-        try { error = JsonSerializer.Deserialize<ErrorDto>(body, JsonOptions); } catch { }
+        try { error = JsonSerializer.Deserialize<ErrorDto>(body, JsonOptions); } catch (OperationCanceledException) { throw; } catch { }
 
         var errorType = error?.ErrorType ?? "Unknown";
         var message = error?.Error ?? body;
@@ -74,7 +65,7 @@ public class MealPlanApiClient : IMealPlanApiClient
         _logger.LogError("API error [{StatusCode}] {ErrorType} for {Context}: {Message}",
             (int)response.StatusCode, errorType, context, message);
 
-        throw new HttpRequestException(
+        return new HttpRequestException(
             $"{errorType}: {message}",
             null,
             response.StatusCode);

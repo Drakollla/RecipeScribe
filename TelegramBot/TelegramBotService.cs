@@ -1,10 +1,6 @@
 using Core.Enums;
 using Core.Exceptions;
 using Core.Helpers;
-using Core.Models;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -36,17 +32,17 @@ namespace TelegramBot
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             var me = await _botClient.GetMe(stoppingToken);
-            _logger.LogInformation("Бот @{Username} успешно запущен.", me.Username);
+            _logger.LogInformation("Р‘РѕС‚ @{Username} Р·Р°РїСѓС‰РµРЅ Рё СЂР°Р±РѕС‚Р°РµС‚.", me.Username);
 
             await _botClient.SetMyCommands(
             [
-                new BotCommand { Command = "start", Description = "Запустить бота" },
-                new BotCommand { Command = "help", Description = "Показать справку" },
-                new BotCommand { Command = "menu", Description = "Показать меню на сегодня" },
-                new BotCommand { Command = "plan_ai", Description = "Спланировать меню через ИИ" },
-                new BotCommand { Command = "search", Description = "Поиск рецептов по ингредиентам" },
-                new BotCommand { Command = "substitute", Description = "Замена ингредиента в рецепте" },
-                new BotCommand { Command = "cancel", Description = "Отменить текущее действие" }
+                new BotCommand { Command = "start", Description = "Р—Р°РїСѓСЃС‚РёС‚СЊ Р±РѕС‚Р°" },
+                new BotCommand { Command = "help", Description = "РџРѕРєР°Р·Р°С‚СЊ РїРѕРјРѕС‰СЊ" },
+                new BotCommand { Command = "menu", Description = "РџРѕРєР°Р·Р°С‚СЊ РјРµРЅСЋ РЅР° СЃРµРіРѕРґРЅСЏ" },
+                new BotCommand { Command = "plan_ai", Description = "РЎРїР»Р°РЅРёСЂРѕРІР°С‚СЊ РјРµРЅСЋ С‡РµСЂРµР· РР" },
+                new BotCommand { Command = "search", Description = "РџРѕРёСЃРє СЂРµС†РµРїС‚РѕРІ РїРѕ РёРЅРіСЂРµРґРёРµРЅС‚Р°Рј" },
+                new BotCommand { Command = "substitute", Description = "Р—Р°РјРµРЅР° РёРЅРіСЂРµРґРёРµРЅС‚Р° РІ СЂРµС†РµРїС‚Рµ" },
+                new BotCommand { Command = "cancel", Description = "РћС‚РјРµРЅРёС‚СЊ С‚РµРєСѓС‰РёР№ СЃС†РµРЅР°СЂРёР№" }
             ], cancellationToken: stoppingToken);
 
             var receiverOptions = new ReceiverOptions
@@ -75,7 +71,7 @@ namespace TelegramBot
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Ошибка при обработке апдейта");
+                _logger.LogError(ex, "РћС€РёР±РєР° РїСЂРё РѕР±СЂР°Р±РѕС‚РєРµ РѕР±РЅРѕРІР»РµРЅРёСЏ");
             }
         }
 
@@ -87,14 +83,22 @@ namespace TelegramBot
             long chatId = message.Chat.Id;
             string text = messageText.Trim();
 
-            _logger.LogInformation("Получено сообщение от {ChatId}: {Text}", chatId, text);
+            _logger.LogInformation("Received message from {ChatId}: {Text}", chatId, text);
 
             var stateInfo = _userStates.GetOrAdd(chatId, _ => new UserStateInfo());
             var semaphore = _chatLocks.GetOrAdd(chatId, _ => new SemaphoreSlim(1, 1));
 
             _ = Task.Run(async () =>
             {
-                await semaphore.WaitAsync(cancellationToken);
+                try
+                {
+                    await semaphore.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
@@ -107,12 +111,12 @@ namespace TelegramBot
                 }
                 catch (RecipeScribeException ex)
                 {
-                    await NotifyErrorAsync(botClient, chatId, ex, cancellationToken);
+                    await NotifyErrorAsync(botClient, chatId, ex);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Ошибка при обработке сообщения от {ChatId}", chatId);
-                    await botClient.SendMessage(chatId, "? Неизвестная ошибка. Попробуйте другой URL или повторите позже.", cancellationToken: cancellationToken);
+                    _logger.LogError(ex, "Error processing message from {ChatId}", chatId);
+                    await botClient.SendMessage(chatId, "РџСЂРѕРёР·РѕС€Р»Р° РѕС€РёР±РєР°. РџРѕРїСЂРѕР±СѓР№С‚Рµ РґСЂСѓРіРѕР№ URL РёР»Рё РєРѕРјР°РЅРґСѓ.", cancellationToken: CancellationToken.None);
                 }
                 finally
                 {
@@ -136,7 +140,14 @@ namespace TelegramBot
 
             _ = Task.Run(async () =>
             {
-                await semaphore.WaitAsync(cancellationToken);
+                try
+                {
+                    await semaphore.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
 
                 try
                 {
@@ -151,12 +162,12 @@ namespace TelegramBot
                 }
                 catch (RecipeScribeException ex)
                 {
-                    await NotifyErrorAsync(botClient, chatId, ex, cancellationToken);
+                    await NotifyErrorAsync(botClient, chatId, ex);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Ошибка при обработке кнопки от {ChatId}", chatId);
-                    await botClient.SendMessage(chatId, "? Неизвестная ошибка. Попробуйте ещё раз.", cancellationToken: cancellationToken);
+                    _logger.LogError(ex, "Error processing callback from {ChatId}", chatId);
+                    await botClient.SendMessage(chatId, "РџСЂРѕРёР·РѕС€Р»Р° РѕС€РёР±РєР°. РџРѕРїСЂРѕР±СѓР№С‚Рµ РµС‰С‘ СЂР°Р·.", cancellationToken: CancellationToken.None);
                 }
                 finally
                 {
@@ -169,25 +180,25 @@ namespace TelegramBot
 
         private Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
         {
-            _logger.LogError(exception, "Ошибка Telegram API");
+            _logger.LogError(exception, "РћС€РёР±РєР° Telegram API");
             return Task.CompletedTask;
         }
 
-        private async Task NotifyErrorAsync(ITelegramBotClient botClient, long chatId, RecipeScribeException ex, CancellationToken cancellationToken)
+        private async Task NotifyErrorAsync(ITelegramBotClient botClient, long chatId, RecipeScribeException ex)
         {
-            _logger.LogError(ex, "Ошибка обработки для {ChatId}: {ErrorType}", chatId, ex.Type);
+            _logger.LogError(ex, "Error processing request for {ChatId}: {ErrorType}", chatId, ex.Type);
 
             string msg = ex.Type switch
             {
-                ErrorType.Network => "Нет соединения или видео недоступно",
-                ErrorType.VideoNotFound => "Видео не найдено или недоступно",
-                ErrorType.LlmFailure => "Не удалось распарсить рецепт (ошибка ИИ)",
-                ErrorType.ParseError => "Ответ от ИИ не содержит корректный рецепт",
-                ErrorType.TranscriptionFailed => "Не удалось распознать аудио",
-                _ => "Неизвестная ошибка"
+                ErrorType.Network => "РџСЂРѕРёР·РѕС€Р»Р° РѕС€РёР±РєР° РїСЂРё Р·Р°РіСЂСѓР·РєРµ РІРёРґРµРѕ",
+                ErrorType.VideoNotFound => "Р’РёРґРµРѕ РЅРµ РЅР°Р№РґРµРЅРѕ РёР»Рё РЅРµРґРѕСЃС‚СѓРїРЅРѕ",
+                ErrorType.LlmFailure => "РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±СЂР°Р±РѕС‚Р°С‚СЊ СЂРµС†РµРїС‚ (РѕС€РёР±РєР° РР)",
+                ErrorType.ParseError => "Р‘РѕС‚ РЅРµ СЃРјРѕРі СЂР°СЃРїРѕР·РЅР°С‚СЊ СЃС‚СЂСѓРєС‚СѓСЂСѓ СЂРµС†РµРїС‚Р°",
+                ErrorType.TranscriptionFailed => "РќРµ СѓРґР°Р»РѕСЃСЊ СЂР°СЃРїРѕР·РЅР°С‚СЊ СЂРµС‡СЊ",
+                _ => "РќРµРёР·РІРµСЃС‚РЅР°СЏ РѕС€РёР±РєР°"
             };
 
-            await botClient.SendMessage(chatId, $"? {msg}", cancellationToken: cancellationToken);
+            await botClient.SendMessage(chatId, $"{msg}", cancellationToken: CancellationToken.None);
         }
     }
 }

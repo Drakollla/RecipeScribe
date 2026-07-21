@@ -1,8 +1,7 @@
-﻿using Infrastructure.Database;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
 
-namespace RecipeScribe.Infrastructure.Database
+namespace Infrastructure.Database
 {
     public abstract class RepositoryBase<T> where T : class
     {

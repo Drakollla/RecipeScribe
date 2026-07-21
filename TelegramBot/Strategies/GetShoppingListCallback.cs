@@ -1,6 +1,4 @@
 using Core.Helpers;
-using Microsoft.Extensions.Logging;
-using System.Net;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;

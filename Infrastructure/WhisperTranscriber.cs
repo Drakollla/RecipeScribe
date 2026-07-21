@@ -1,6 +1,7 @@
 ﻿using Core.Contracts;
 using Core.Enums;
 using Core.Exceptions;
+using Core.Tools;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Text;
@@ -12,26 +13,24 @@ namespace Infrastructure
     public class WhisperTranscriber : ITranscriber
     {
         private readonly ILogger<WhisperTranscriber> _logger;
-        private static readonly string ToolsDir = Path.GetFullPath(
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "Core", "Tools"));
-        private static readonly string ModelPath = Path.Combine(ToolsDir, "ggml-base.bin");
+        private static readonly string ModelPath = Path.Combine(ToolPaths.Directory, "ggml-base.bin");
 
         public WhisperTranscriber(ILogger<WhisperTranscriber> logger)
         {
             _logger = logger;
         }
 
-        public async Task<string> TranscribeAsync(string audioFilePath)
+        public async Task<string> TranscribeAsync(string audioFilePath, CancellationToken ct = default)
         {
-            Directory.CreateDirectory(ToolsDir);
+            Directory.CreateDirectory(ToolPaths.Directory);
 
-            await EnsureModelAsync();
+            await EnsureModelAsync(ct);
 
-            string wavPath = await ConvertToWavAsync(audioFilePath);
+            string wavPath = await ConvertToWavAsync(audioFilePath, ct);
 
             try
             {
-                return await TranscribeWavAsync(wavPath);
+                return await TranscribeWavAsync(wavPath, ct);
             }
             finally
             {
@@ -40,7 +39,7 @@ namespace Infrastructure
             }
         }
 
-        private async Task EnsureModelAsync()
+        private async Task EnsureModelAsync(CancellationToken ct)
         {
             if (File.Exists(ModelPath))
                 return;
@@ -50,14 +49,14 @@ namespace Infrastructure
             using var modelStream = await WhisperGgmlDownloader.Default.GetGgmlModelAsync(GgmlType.Base);
             using var fileWriter = File.OpenWrite(ModelPath);
 
-            await modelStream.CopyToAsync(fileWriter);
+            await modelStream.CopyToAsync(fileWriter, ct);
             _logger.LogInformation("Модель успешно загружена.");
         }
 
-        private async Task<string> ConvertToWavAsync(string audioFilePath)
+        private async Task<string> ConvertToWavAsync(string audioFilePath, CancellationToken ct)
         {
             string wavPath = Path.ChangeExtension(audioFilePath, ".wav");
-            string ffmpegBin = Path.Combine(ToolsDir, OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg");
+            string ffmpegBin = Path.Combine(ToolPaths.Directory, OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg");
 
             _logger.LogInformation("Конвертирую аудио в WAV формат...");
 
@@ -71,20 +70,20 @@ namespace Infrastructure
             });
 
             if (process == null)
-                throw new RecipeScribeException(ErrorType.TranscriptionFailed, "Не удалось запустить ffmpeg");
+                throw new RecipeScribeException(ErrorType.TranscriptionFailed, "Failed to start ffmpeg");
 
-            await process.WaitForExitAsync();
+            await process.WaitForExitAsync(ct);
 
             if (process.ExitCode != 0)
             {
-                string error = await process.StandardError.ReadToEndAsync();
-                throw new RecipeScribeException(ErrorType.TranscriptionFailed, $"ffmpeg не смог конвертировать аудио: {error}");
+                string error = await process.StandardError.ReadToEndAsync(ct);
+                throw new RecipeScribeException(ErrorType.TranscriptionFailed, $"ffmpeg failed to convert audio: {error}");
             }
 
             return wavPath;
         }
 
-        private async Task<string> TranscribeWavAsync(string wavPath)
+        private async Task<string> TranscribeWavAsync(string wavPath, CancellationToken ct)
         {
             _logger.LogInformation("Начинаю распознавание речи (это может занять некоторое время)...");
 
@@ -94,7 +93,7 @@ namespace Infrastructure
             using var processor = whisperFactory.CreateBuilder().WithLanguage("auto").Build();
             using var fileStream = File.OpenRead(wavPath);
 
-            await foreach (var segment in processor.ProcessAsync(fileStream))
+            await foreach (var segment in processor.ProcessAsync(fileStream).WithCancellation(ct))
             {
                 resultText.Append(segment.Text);
             }

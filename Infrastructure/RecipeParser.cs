@@ -13,18 +13,18 @@ namespace Infrastructure
 {
     public class RecipeParser : IRecipeParser
     {
-        private readonly LlmService _llmClient;
+        private readonly Kernel _kernel;
         private readonly LlmSettings _llmSettings;
         private readonly ILogger<RecipeParser> _logger;
 
         public RecipeParser(Kernel kernel, LlmSettings llmSettings, ILogger<RecipeParser> logger)
         {
-            _llmClient = new LlmService(kernel);
+            _kernel = kernel;
             _llmSettings = llmSettings;
             _logger = logger;
         }
 
-        public async Task<Recipe> ParseRecipeAsync(string transcript)
+        public async Task<Recipe> ParseRecipeAsync(string transcript, CancellationToken ct = default)
         {
             string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "RecipeParser.md");
             string promptTemplate = await File.ReadAllTextAsync(promptPath);
@@ -38,12 +38,16 @@ namespace Infrastructure
             string responseText;
             try
             {
-                responseText = await _llmClient.InitialChatAsync(fullPrompt);
+                responseText = await LlmRetryHelper.CallWithRetryAsync(_kernel, fullPrompt, ct: ct);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
                 throw new RecipeScribeException(ErrorType.LlmFailure,
-                    "Ошибка при обращении к LLM", ex);
+                    "Error calling LLM", ex);
             }
 
             _logger.LogDebug("Сырой ответ от ИИ:\n{Response}", responseText);
@@ -103,7 +107,7 @@ namespace Infrastructure
             catch (JsonException ex)
             {
                 throw new RecipeScribeException(ErrorType.ParseError,
-                    $"LLM вернул невалидный JSON: {ex.Message}", ex);
+                    $"LLM returned invalid JSON: {ex.Message}", ex);
             }
         }
     }

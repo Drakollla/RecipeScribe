@@ -3,357 +3,195 @@ using Core.Enums;
 using Core.Exceptions;
 using Core.Helpers;
 using Core.Models;
-using Infrastructure.Database;
 using Infrastructure.Settings;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using System.Globalization;
-using System.Linq.Expressions;
 using System.Text;
 using System.Text.Json;
 
-namespace Infrastructure.Services
+namespace Infrastructure.Services;
+
+public class MealPlannerService : IMealPlannerService
 {
-    public class MealPlannerService : IMealPlannerService
+    private readonly IMealPlanRepository _repo;
+    private readonly Kernel _kernel;
+    private readonly LlmSettings _llmSettings;
+    private readonly ILogger<MealPlannerService> _logger;
+
+    public MealPlannerService(IMealPlanRepository repo,
+        Kernel kernel,
+        LlmSettings llmSettings,
+        ILogger<MealPlannerService> logger)
     {
-        const int maxRetries = 5;
+        _repo = repo;
+        _kernel = kernel;
+        _llmSettings = llmSettings;
+        _logger = logger;
+    }
 
-        private readonly RecipeDbContext _dbContext;
-        private readonly Kernel _kernel;
-        private readonly IOptions<LlmSettings> _llmSettings;
-        private readonly ILogger<MealPlannerService> _logger;
+    public async Task<MealPlan> CreatePlanManualAsync(long telegramChatId, DateOnly date, Dictionary<MealType, Guid> mealRecipes)
+    {
+        var user = await _repo.GetOrCreateUserAsync(telegramChatId);
 
-        private record RecipeCandidateDto(Guid Id, string Title);
-
-        public MealPlannerService(RecipeDbContext dbContext,
-            Kernel kernel,
-            IOptions<LlmSettings> llmSettings,
-            ILogger<MealPlannerService> logger)
+        var newPlan = new MealPlan
         {
-            _dbContext = dbContext;
-            _kernel = kernel;
-            _llmSettings = llmSettings;
-            _logger = logger;
-        }
+            Id = Guid.NewGuid(),
+            Date = date,
+            UserId = user.Id
+        };
 
-        public async Task<MealPlan> CreatePlanManualAsync(long telegramChatId, DateOnly date, Dictionary<MealType, Guid> mealRecipes)
+        foreach (var (mealType, recipeId) in mealRecipes)
         {
-            var user = await GetOrCreateUserAsync(telegramChatId);
-
-            var existingPlan = await GetPlanForDateAsync(telegramChatId, date);
-
-            if (existingPlan != null)
-                _dbContext.MealPlans.Remove(existingPlan);
-
-            var newPlan = new MealPlan
+            newPlan.Items.Add(new MealPlanItem
             {
                 Id = Guid.NewGuid(),
-                Date = date,
-                UserId = user.Id
-            };
+                RecipeId = recipeId,
+                MealType = mealType,
+                Portions = 1
+            });
+        }
 
-            foreach (var (mealType, recipeId) in mealRecipes)
+        return await _repo.CreatePlanAsync(newPlan);
+    }
+
+    public async Task<MealPlan> GenerateSmartPlanAsync(long telegramChatId, DateOnly date, string userRequest)
+    {
+        var user = await _repo.GetOrCreateUserAsync(telegramChatId);
+
+        var recentRecipeIds = await _repo.GetRecentRecipeIdsAsync(user.Id, date);
+        string? primaryKeyword = GetPrimaryKeyword(userRequest);
+
+        var breakfasts = await _repo.GetCategoryCandidatesAsync(r => r.IsBreakfast, recentRecipeIds, primaryKeyword);
+        var lunches = await _repo.GetCategoryCandidatesAsync(r => r.IsLunch, recentRecipeIds, primaryKeyword);
+        var dinners = await _repo.GetCategoryCandidatesAsync(r => r.IsDinner, recentRecipeIds, primaryKeyword);
+
+        var allCandidates = breakfasts.Concat(lunches).Concat(dinners).DistinctBy(r => r.Id).ToList();
+
+        if (!allCandidates.Any())
+            throw new RecipeScribeException(ErrorType.ParseError, "No recipes found matching the meal type categories.");
+
+        var llmResponse = await AskLlmForPlanAsync(allCandidates, userRequest);
+        var mealRecipes = new Dictionary<MealType, Guid>();
+
+        if (Guid.TryParse(llmResponse.Breakfast, out var breakfastId))
+            mealRecipes[MealType.Breakfast] = breakfastId;
+
+        if (Guid.TryParse(llmResponse.Lunch, out var lunchId))
+            mealRecipes[MealType.Lunch] = lunchId;
+
+        if (Guid.TryParse(llmResponse.Dinner, out var dinnerId))
+            mealRecipes[MealType.Dinner] = dinnerId;
+
+        return await CreatePlanManualAsync(telegramChatId, date, mealRecipes);
+    }
+
+    private async Task<LlmMealPlanResponse> AskLlmForPlanAsync(List<RecipeCandidate> candidates, string userRequest)
+    {
+        var recipesJson = JsonSerializer.Serialize(candidates, new JsonSerializerOptions { WriteIndented = false });
+        string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "MealPlanner.md");
+        string promptTemplate = await File.ReadAllTextAsync(promptPath);
+
+        string prompt = promptTemplate
+            .Replace("{recipesList}", recipesJson)
+            .Replace("{userRequest}", userRequest)
+            .Replace("{targetLanguage}", _llmSettings.TargetLanguage);
+
+        var executionSettings = new OpenAIPromptExecutionSettings { Temperature = _llmSettings.Temperature };
+
+        return await LlmRetryHelper.CallWithRetryAsync(
+            async () =>
             {
-                newPlan.Items.Add(new MealPlanItem
+                var rawResponse = await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, executionSettings, _logger, "Планировщик");
+                var cleanJson = rawResponse.Replace("```json", "").Replace("```", "").Trim();
+
+                var response = JsonSerializer.Deserialize<LlmMealPlanResponse>(cleanJson, new JsonSerializerOptions
                 {
-                    Id = Guid.NewGuid(),
-                    RecipeId = recipeId,
-                    MealType = mealType,
-                    Portions = 1
+                    PropertyNameCaseInsensitive = true
                 });
-            }
 
-            _dbContext.MealPlans.Add(newPlan);
-            await _dbContext.SaveChangesAsync();
+                return response ?? throw new RecipeScribeException(ErrorType.LlmFailure, "LLM returned an empty response.");
+            },
+            logger: _logger,
+            logPrefix: "Планировщик");
+    }
 
-            return await _dbContext.MealPlans
-                .Include(mp => mp.Items)
-                    .ThenInclude(mpi => mpi.Recipe)
-                .FirstAsync(mp => mp.Id == newPlan.Id);
-        }
+    private static string? GetPrimaryKeyword(string userRequest)
+    {
+        var keywords = userRequest.ToLower()
+            .Split(new[] { ' ', ',', '.', '!' }, StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length > 3)
+            .ToList();
 
-        public async Task<MealPlan> GenerateSmartPlanAsync(long telegramChatId, DateOnly date, string userRequest)
-        {
-            var user = await GetOrCreateUserAsync(telegramChatId);
+        return keywords.FirstOrDefault();
+    }
 
-            var recentRecipeIds = await GetRecentRecipeIdsAsync(user.Id, date);
-            string? primaryKeyword = GetPrimaryKeyword(userRequest);
+    public async Task<MealPlan?> GetPlanForDateAsync(long telegramChatId, DateOnly date)
+    {
+        return await _repo.GetPlanForDateAsync(telegramChatId, date);
+    }
 
-            var breakfasts = await GetCategoryCandidatesAsync(r => r.IsBreakfast, recentRecipeIds, primaryKeyword);
-            var lunches = await GetCategoryCandidatesAsync(r => r.IsLunch, recentRecipeIds, primaryKeyword);
-            var dinners = await GetCategoryCandidatesAsync(r => r.IsDinner, recentRecipeIds, primaryKeyword);
+    public async Task<string> GetShoppingListAsync(Guid mealPlanId)
+    {
+        var planItems = await _repo.GetPlanItemsWithRecipesAsync(mealPlanId);
 
-            var allCandidates = breakfasts.Concat(lunches).Concat(dinners).DistinctBy(r => r.Id).ToList();
+        var allIngredients = planItems
+            .SelectMany(mpi => mpi.Recipe.Ingredients)
+            .ToList();
 
-            if (!allCandidates.Any())
-                throw new RecipeScribeException(ErrorType.ParseError, "В базе данных нет рецептов, соответствующих категориям приемов пищи.");
+        if (!allIngredients.Any())
+            return "*Список покупок пуст.*";
 
-            var llmResponse = await AskLlmForPlanAsync(allCandidates, userRequest);
-            var mealRecipes = new Dictionary<MealType, Guid>();
-
-            if (Guid.TryParse(llmResponse.Breakfast, out var breakfastId))
-                mealRecipes[MealType.Breakfast] = breakfastId;
-
-            if (Guid.TryParse(llmResponse.Lunch, out var lunchId))
-                mealRecipes[MealType.Lunch] = lunchId;
-
-            if (Guid.TryParse(llmResponse.Dinner, out var dinnerId))
-                mealRecipes[MealType.Dinner] = dinnerId;
-
-            return await CreatePlanManualAsync(telegramChatId, date, mealRecipes);
-        }
-
-        private async Task<LlmMealPlanResponse> AskLlmForPlanAsync(List<RecipeCandidateDto> candidates, string userRequest)
-        {
-            var recipesJson = JsonSerializer.Serialize(candidates, new JsonSerializerOptions { WriteIndented = false });
-            string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "MealPlanner.md");
-            string promptTemplate = await File.ReadAllTextAsync(promptPath);
-
-            string prompt = promptTemplate
-                .Replace("{recipesList}", recipesJson)
-                .Replace("{userRequest}", userRequest)
-                .Replace("{targetLanguage}", _llmSettings.Value.TargetLanguage);
-
-            for (int attempt = 1; attempt <= maxRetries; attempt++)
+        var flatList = allIngredients
+            .GroupBy(i => i.Name.Trim().ToLowerInvariant())
+            .Select(g =>
             {
-                try
-                {
-                    var rawResponse = await CallLlmAsync(prompt);
-                    var cleanJson = rawResponse.Replace("```json", "").Replace("```", "").Trim();
+                var amounts = g.Select(i => i.Amount.Trim())
+                               .Where(a => !string.IsNullOrWhiteSpace(a))
+                               .Distinct()
+                               .ToList();
 
-                    var response = JsonSerializer.Deserialize<LlmMealPlanResponse>(cleanJson, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
+                var name = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(g.Key);
+                var amountText = amounts.Any() ? $" ({string.Join(" + ", amounts)})" : "";
 
-                    return response ?? throw new RecipeScribeException(ErrorType.LlmFailure, "Нейросеть вернула пустой ответ.");
-                }
-                catch (HttpRequestException ex) when (IsClientError(ex))
-                {
-                    _logger.LogError(ex, "[Планировщик] Неисправимая ошибка HTTP, прекращаю попытки");
-                    throw;
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "[Планировщик] Попытка {Attempt}/{MaxRetries} завершилась ошибкой", attempt, maxRetries);
+                return $"{name}{amountText}";
+            })
+            .OrderBy(item => item)
+            .ToList();
 
-                    if (attempt == maxRetries)
-                        throw new RecipeScribeException(ErrorType.LlmFailure, $"Не удалось составить меню после {maxRetries} попыток.", ex);
+        var flatListString = string.Join("\n", flatList.Select(item => $"• {item}"));
 
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
-                }
-            }
+        string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "ShoppingListCategorizer.md");
+        string promptTemplate = await File.ReadAllTextAsync(promptPath);
 
-            throw new RecipeScribeException(ErrorType.LlmFailure, "Не удалось составить меню.");
-        }
+        string prompt = promptTemplate
+            .Replace("{flatListString}", flatListString)
+            .Replace("{targetLanguage}", _llmSettings.TargetLanguage);
 
-
-        private async Task<List<RecipeCandidateDto>> GetCategoryCandidatesAsync(Expression<Func<Recipe, bool>> categoryPredicate,
-            List<Guid> recentRecipeIds, string? primaryKeyword)
+        try
         {
-            var query = _dbContext.Recipes
-                .Where(categoryPredicate)
-                .Where(r => !recentRecipeIds.Contains(r.Id));
+            var executionSettings = new OpenAIPromptExecutionSettings { Temperature = _llmSettings.Temperature };
+            var rawResponse = await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, executionSettings, _logger, "Список покупок");
+            var categorizedList = rawResponse.Trim();
 
-            if (!string.IsNullOrEmpty(primaryKeyword))
-            {
-                query = query.OrderByDescending(r =>
-                    r.Title.Contains(primaryKeyword) ||
-                    r.Ingredients.Any(i => i.Name.Contains(primaryKeyword)));
-            }
-            else query = query.OrderBy(r => EF.Functions.Random());
+            if (string.IsNullOrWhiteSpace(categorizedList))
+                throw new RecipeScribeException(ErrorType.LlmFailure, "LLM returned an empty response.");
 
-            var result = await query
-                .Take(10)
-                .Select(r => new RecipeCandidateDto(r.Id, r.Title))
-                .ToListAsync();
-
-            if (!result.Any())
-            {
-                result = await _dbContext.Recipes
-                    .Where(categoryPredicate)
-                    .OrderBy(r => EF.Functions.Random())
-                    .Take(10)
-                    .Select(r => new RecipeCandidateDto(r.Id, r.Title))
-                    .ToListAsync();
-            }
-
-            return result;
+            return $"*СПИСОК ПОКУПОК ПО ОТДЕЛАМ:*\n\n{categorizedList}";
         }
-
-        private string? GetPrimaryKeyword(string userRequest)
+        catch (Exception ex)
         {
-            var keywords = userRequest.ToLower()
-                .Split(new[] { ' ', ',', '.', '!' }, StringSplitOptions.RemoveEmptyEntries)
-                .Where(w => w.Length > 3)
-                .ToList();
+            _logger.LogError(ex, "[Ошибка ИИ при категоризации списка покупок]");
 
-            return keywords.FirstOrDefault();
-        }
+            var listOfIngredients = new StringBuilder();
+            listOfIngredients.AppendLine("*СПИСОК ПОКУПОК (без сортировки по отделам):*");
+            listOfIngredients.AppendLine("=========================");
+            listOfIngredients.AppendLine(flatListString);
+            listOfIngredients.AppendLine();
+            listOfIngredients.AppendLine("*Не удалось распределить по отделам из-за временного сбоя сети.*");
 
-        private async Task<List<Guid>> GetRecentRecipeIdsAsync(Guid userId, DateOnly date)
-        {
-            var startDate = date.AddDays(-3);
-            var endDate = date.AddDays(3);
-
-            return await _dbContext.MealPlanItems
-                .Where(mpi => mpi.MealPlan.UserId == userId && mpi.MealPlan.Date >= startDate && mpi.MealPlan.Date <= endDate)
-                .Select(mpi => mpi.RecipeId)
-                .Distinct()
-                .ToListAsync();
-        }
-
-        private async Task<string> CallLlmAsync(string prompt)
-        {
-            var chatService = _kernel.GetRequiredService<IChatCompletionService>();
-
-            var history = new ChatHistory();
-            history.AddUserMessage(prompt);
-
-            var executionSettings = new OpenAIPromptExecutionSettings
-            {
-                Temperature = 0.1f
-            };
-
-            var response = await chatService.GetChatMessageContentAsync(history, executionSettings, _kernel);
-            return response.Content ?? string.Empty;
-        }
-
-        private async Task<string> CallLlmWithRetryAsync(string prompt)
-        {
-            for (int attempt = 1; attempt <= maxRetries; attempt++)
-            {
-                try
-                {
-                    return await CallLlmAsync(prompt);
-                }
-                catch (HttpRequestException ex) when (IsClientError(ex))
-                {
-                    throw;
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "[Список покупок] Попытка LLM {Attempt}/{MaxRetries} завершилась ошибкой", attempt, maxRetries);
-
-                    if (attempt == maxRetries)
-                        throw;
-
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
-                }
-            }
-
-            throw new RecipeScribeException(ErrorType.LlmFailure, "Не удалось вызвать LLM.");
-        }
-
-        private static bool IsClientError(HttpRequestException ex) =>
-            ex.StatusCode.HasValue && (int)ex.StatusCode.Value >= 400 && (int)ex.StatusCode.Value < 500;
-
-        public async Task<MealPlan?> GetPlanForDateAsync(long telegramChatId, DateOnly date)
-        {
-            return await _dbContext.MealPlans
-               .Include(x => x.User)
-               .Include(x => x.Items)
-                   .ThenInclude(x => x.Recipe)
-               .FirstOrDefaultAsync(x => x.User.TelegramChatId == telegramChatId && x.Date == date);
-        }
-
-        public async Task<string> GetShoppingListAsync(Guid mealPlanId)
-        {
-            var planItems = await _dbContext.MealPlanItems
-                .Where(mpi => mpi.MealPlanId == mealPlanId)
-                .Include(mpi => mpi.Recipe)
-                    .ThenInclude(r => r.Ingredients)
-                .ToListAsync();
-
-            var allIngredients = planItems
-                .SelectMany(mpi => mpi.Recipe.Ingredients)
-                .ToList();
-
-            if (!allIngredients.Any())
-                return "*Список покупок пуст.*";
-
-            var flatList = allIngredients
-                .GroupBy(i => i.Name.Trim().ToLowerInvariant())
-                .Select(g =>
-                {
-                    var amounts = g.Select(i => i.Amount.Trim())
-                                   .Where(a => !string.IsNullOrWhiteSpace(a))
-                                   .Distinct()
-                                   .ToList();
-
-                    var name = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(g.Key);
-                    var amountText = amounts.Any() ? $" ({string.Join(" + ", amounts)})" : "";
-
-                    return $"{name}{amountText}";
-                })
-                .OrderBy(item => item)
-                .ToList();
-
-            var flatListString = string.Join("\n", flatList.Select(item => $"• {item}"));
-
-            string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "ShoppingListCategorizer.md");
-            string promptTemplate = await File.ReadAllTextAsync(promptPath);
-
-            string prompt = promptTemplate
-                .Replace("{flatListString}", flatListString)
-                .Replace("{targetLanguage}", _llmSettings.Value.TargetLanguage);
-
-            try
-            {
-                var rawResponse = await CallLlmWithRetryAsync(prompt);
-                var categorizedList = rawResponse.Trim();
-
-                if (string.IsNullOrWhiteSpace(categorizedList))
-                    throw new RecipeScribeException(ErrorType.LlmFailure, "ИИ вернул пустой ответ.");
-
-                return $"*СПИСОК ПОКУПОК ПО ОТДЕЛАМ:*\n\n{categorizedList}";
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[Ошибка ИИ при категоризации списка покупок]");
-
-                var listOfIngredients = new StringBuilder();
-                listOfIngredients.AppendLine("*СПИСОК ПОКУПОК (без сортировки по отделам):*");
-                listOfIngredients.AppendLine("=========================");
-                listOfIngredients.AppendLine(flatListString);
-                listOfIngredients.AppendLine();
-                listOfIngredients.AppendLine("*Не удалось распределить по отделам из-за временного сбоя сети.*");
-
-                return listOfIngredients.ToString();
-            }
-        }
-
-        private async Task<User> GetOrCreateUserAsync(long telegramChatId)
-        {
-            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.TelegramChatId == telegramChatId);
-
-            if (user == null)
-            {
-                user = new User
-                {
-                    Id = Guid.NewGuid(),
-                    TelegramChatId = telegramChatId,
-                    Username = $"tg_{telegramChatId}"
-                };
-
-                _dbContext.Users.Add(user);
-
-                await _dbContext.SaveChangesAsync();
-            }
-
-            return user;
+            return listOfIngredients.ToString();
         }
     }
 }
