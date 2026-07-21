@@ -1,18 +1,18 @@
-﻿using Core.Contracts;
 using Core.Helpers;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using TelegramBot.Contracts;
 
 namespace TelegramBot.Strategies
 {
     public class GetShoppingListCallback : ICallbackQuery
     {
-        private readonly IMealPlannerService _mealPlannerService;
+        private readonly IMealPlanApiClient _planApi;
 
-        public GetShoppingListCallback(IMealPlannerService mealPlannerService)
+        public GetShoppingListCallback(IMealPlanApiClient planApi)
         {
-            _mealPlannerService = mealPlannerService;
+            _planApi = planApi;
         }
 
         public bool CanHandle(string data) => data.StartsWith("shopping_list:");
@@ -29,7 +29,7 @@ namespace TelegramBot.Strategies
 
             if (Guid.TryParse(planIdStr, out var planId))
             {
-                string shoppingListMarkdown = await _mealPlannerService.GetShoppingListAsync(planId);
+                string shoppingListMarkdown = await _planApi.GetShoppingListAsync(planId, cancellationToken);
 
                 await botClient.SendMessage(
                     chatId: chatId,

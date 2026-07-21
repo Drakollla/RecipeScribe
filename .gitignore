@@ -363,7 +363,6 @@ Core/Tools/
 logs/
 publish.bat
 **/wwwroot/
-**/services/
 *.db
 *.db-shm
 *.db-wal

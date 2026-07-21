@@ -1,6 +1,6 @@
 namespace Core.Contracts;
 
-public interface ISubstitutionService
+public interface IIngredientSubstitutor
 {
     Task<string> GetSubstitutionsAsync(string ingredient, string recipeTitle, CancellationToken cancellationToken = default);
 }

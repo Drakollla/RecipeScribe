@@ -1,33 +1,31 @@
-п»їusing Core.Contracts;
-using Core.Enums;
-using Core.Exceptions;
-using Core.Models;
 using Microsoft.Extensions.Logging;
+using Shared.DTOs;
 using System.Text;
 using Telegram.Bot;
 using Telegram.Bot.Types.ReplyMarkups;
+using TelegramBot.Contracts;
 
-namespace TelegramBot 
-{ 
+namespace TelegramBot
+{
     public class TelegramMealPlanFlow
     {
-        private readonly IMealPlannerService _mealPlannerService;
+        private readonly IMealPlanApiClient _planApi;
         private readonly ILogger<TelegramMealPlanFlow> _logger;
 
-        public TelegramMealPlanFlow(IMealPlannerService mealPlannerService, ILogger<TelegramMealPlanFlow> logger)
+        public TelegramMealPlanFlow(IMealPlanApiClient planApi, ILogger<TelegramMealPlanFlow> logger)
         {
-            _mealPlannerService = mealPlannerService;
+            _planApi = planApi;
             _logger = logger;
         }
 
         public async Task ShowTodayMenuAsync(ITelegramBotClient botClient, long chatId, CancellationToken cancellationToken)
         {
             var today = DateOnly.FromDateTime(DateTime.Today);
-            var plan = await _mealPlannerService.GetPlanForDateAsync(chatId, today);
+            var plan = await _planApi.GetPlanAsync(chatId, today, cancellationToken);
 
             if (plan == null || plan.Items.Count == 0)
             {
-                await botClient.SendMessage(chatId, "РЈ РІР°СЃ РїРѕРєР° РЅРµС‚ РјРµРЅСЋ РЅР° СЃРµРіРѕРґРЅСЏ. РќР°Р±РµСЂРёС‚Рµ /plan_ai, С‡С‚РѕР±С‹ СЃРѕСЃС‚Р°РІРёС‚СЊ РµРіРѕ СЃ РїРѕРјРѕС‰СЊСЋ РР!", cancellationToken: cancellationToken);
+                await botClient.SendMessage(chatId, "У вас пока нет меню на сегодня. Наберите /plan_ai, чтобы составить его с помощью ИИ!", cancellationToken: cancellationToken);
                 return;
             }
 
@@ -39,11 +37,11 @@ namespace TelegramBot
 
         public async Task ProcessAiPlanningAsync(ITelegramBotClient botClient, long chatId, DateOnly targetDate, string preferences, CancellationToken cancellationToken)
         {
-            var statusMessage = await botClient.SendMessage(chatId, "РџРѕРґР±РёСЂР°СЋ РїРѕРґС…РѕРґСЏС‰РёРµ СЂРµС†РµРїС‚С‹ С‡РµСЂРµР· РР...", cancellationToken: cancellationToken);
+            var statusMessage = await botClient.SendMessage(chatId, "Подбираю подходящие рецепты через ИИ...", cancellationToken: cancellationToken);
 
             try
             {
-                var plan = await _mealPlannerService.GenerateSmartPlanAsync(chatId, targetDate, preferences);
+                var plan = await _planApi.GeneratePlanAsync(chatId, targetDate, preferences, cancellationToken);
 
                 string formattedMenu = FormatMenuToMarkdown(plan);
                 var keyboard = GetMenuKeyboard(plan, isConfirmed: false);
@@ -51,35 +49,22 @@ namespace TelegramBot
                 await botClient.DeleteMessage(chatId, statusMessage.Id, cancellationToken: cancellationToken);
                 await botClient.SendMessage(chatId, formattedMenu, parseMode: Telegram.Bot.Types.Enums.ParseMode.Markdown, replyMarkup: keyboard, cancellationToken: cancellationToken);
             }
-            catch (RecipeScribeException ex)
-            {
-                _logger.LogError(ex, "РћС€РёР±РєР° РіРµРЅРµСЂР°С†РёРё РјРµРЅСЋ РґР»СЏ {ChatId}", chatId);
-                await botClient.EditMessageText(chatId, statusMessage.Id, $"{ex.Message}", cancellationToken: cancellationToken);
-            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "РћС€РёР±РєР° РіРµРЅРµСЂР°С†РёРё РјРµРЅСЋ РґР»СЏ {ChatId}", chatId);
-                await botClient.EditMessageText(chatId, statusMessage.Id, "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕСЃС‚Р°РІРёС‚СЊ РјРµРЅСЋ РёР·-Р·Р° РІРЅСѓС‚СЂРµРЅРЅРµР№ РѕС€РёР±РєРё.", cancellationToken: cancellationToken);
+                _logger.LogError(ex, "Ошибка генерации меню для {ChatId}", chatId);
+                await botClient.EditMessageText(chatId, statusMessage.Id, "Не удалось составить меню из-за внутренней ошибки.", cancellationToken: cancellationToken);
             }
         }
 
-        public string FormatMenuToMarkdown(MealPlan plan)
+        public string FormatMenuToMarkdown(MealPlanDto plan)
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"*РњР•РќР® РќРђ РЎР•Р“РћР”РќРЇ ({plan.Date:dd.MM.yyyy})*");
+            sb.AppendLine($"*МЕНЮ НА СЕГОДНЯ ({plan.Date})*");
             sb.AppendLine();
 
-            foreach (var item in plan.Items.OrderBy(i => i.MealType))
+            foreach (var item in plan.Items)
             {
-                string mealName = item.MealType switch
-                {
-                    MealType.Breakfast => "Р—РђР’РўР РђРљ",
-                    MealType.Lunch => "РћР‘Р•Р”",
-                    MealType.Dinner => "РЈР–РРќ",
-                    _ => "РџР•Р Р•РљРЈРЎ"
-                };
-
-                sb.AppendLine($"*{mealName}:*");
+                sb.AppendLine($"*{item.MealType.ToUpper()}:*");
                 sb.AppendLine($"_{MarkdownHelper.Escape(item.Recipe.Title)}_");
                 sb.AppendLine();
             }
@@ -87,21 +72,14 @@ namespace TelegramBot
             return sb.ToString();
         }
 
-        public InlineKeyboardMarkup GetMenuKeyboard(MealPlan plan, bool isConfirmed)
+        public InlineKeyboardMarkup GetMenuKeyboard(MealPlanDto plan, bool isConfirmed)
         {
             var buttons = new List<List<InlineKeyboardButton>>();
             var recipeButtons = new List<InlineKeyboardButton>();
-            
-            foreach (var item in plan.Items.OrderBy(i => i.MealType))
+
+            foreach (var item in plan.Items)
             {
-                string icon = item.MealType switch
-                {
-                    MealType.Breakfast => "Р—Р°РІС‚СЂР°Рє",
-                    MealType.Lunch => "РћР±РµРґ",
-                    MealType.Dinner => "РЈР¶РёРЅ",
-                    _ => "Р РµС†РµРїС‚"
-                };
-                recipeButtons.Add(InlineKeyboardButton.WithCallbackData(icon, $"show_recipe:{item.RecipeId}"));
+                recipeButtons.Add(InlineKeyboardButton.WithCallbackData(item.MealType, $"show_recipe:{item.Recipe.Id}"));
             }
 
             if (recipeButtons.Any())
@@ -109,8 +87,8 @@ namespace TelegramBot
 
             buttons.Add(
             [
-                InlineKeyboardButton.WithCallbackData("РџРµСЂРµРіРµРЅРµСЂРёСЂРѕРІР°С‚СЊ", "regenerate_ai"),
-                InlineKeyboardButton.WithCallbackData("РЎРїРёСЃРѕРє РїРѕРєСѓРїРѕРє", $"shopping_list:{plan.Id}")
+                InlineKeyboardButton.WithCallbackData("Перегенерировать", "regenerate_ai"),
+                InlineKeyboardButton.WithCallbackData("Список покупок", $"shopping_list:{plan.Id}")
             ]);
 
             return new InlineKeyboardMarkup(buttons);

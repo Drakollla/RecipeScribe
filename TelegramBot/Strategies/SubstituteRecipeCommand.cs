@@ -1,18 +1,18 @@
-using Core.Contracts;
 using Core.Enums;
 using Core.Helpers;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using TelegramBot.Contracts;
 
 namespace TelegramBot.Strategies;
 
 public class SubstituteRecipeCommand : IMessageCommand
 {
-    private readonly ISubstitutionService _substitutionService;
+    private readonly ISubstitutionApiClient _substitutionApi;
 
-    public SubstituteRecipeCommand(ISubstitutionService substitutionService)
+    public SubstituteRecipeCommand(ISubstitutionApiClient substitutionApi)
     {
-        _substitutionService = substitutionService;
+        _substitutionApi = substitutionApi;
     }
 
     public bool CanHandle(string text, BotState state) =>
@@ -36,7 +36,7 @@ public class SubstituteRecipeCommand : IMessageCommand
 
         var statusMessage = await botClient.SendMessage(message.Chat.Id, "Ищу варианты замены...", cancellationToken: cancellationToken);
 
-        var result = await _substitutionService.GetSubstitutionsAsync(ingredient, recipeTitle, cancellationToken);
+        var result = await _substitutionApi.GetSubstitutionAsync(ingredient, recipeTitle, cancellationToken);
 
         await botClient.DeleteMessage(message.Chat.Id, statusMessage.Id, cancellationToken: cancellationToken);
         await botClient.SendMessage(message.Chat.Id,

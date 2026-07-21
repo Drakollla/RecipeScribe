@@ -54,7 +54,7 @@ public static class ServiceCollectionExtensions
         services.AddKernelWithProvider(configuration);
 
         services.AddTransient<IRecipeParser, RecipeParser>();
-        services.AddTransient<ISubstitutionService, LlmSubstitutionService>();
+        services.AddTransient<IIngredientSubstitutor, LlmSubstitutionService>();
 
         return services;
     }
