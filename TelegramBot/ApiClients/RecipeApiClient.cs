@@ -1,5 +1,7 @@
-using Shared.DTOs;
+using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using Shared.DTOs;
 using TelegramBot.Contracts;
 
 namespace TelegramBot.ApiClients;
@@ -8,6 +10,7 @@ public class RecipeApiClient : IRecipeApiClient
 {
     private readonly HttpClient _http;
     private readonly ILogger<RecipeApiClient> _logger;
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     public RecipeApiClient(HttpClient http, ILogger<RecipeApiClient> logger)
     {
@@ -17,57 +20,75 @@ public class RecipeApiClient : IRecipeApiClient
 
     public async Task<RecipeDto?> ExtractRecipeAsync(string url, CancellationToken ct = default)
     {
-        try
-        {
-            var response = await _http.PostAsJsonAsync("/api/recipes/extract", new { url }, ct);
-            response.EnsureSuccessStatusCode();
+        var response = await _http.PostAsJsonAsync("/api/recipes/extract", new CreateRecipeDto(url), ct);
 
-            return await response.Content.ReadFromJsonAsync<RecipeDto>(cancellationToken: ct);
-        }
-        catch (Exception ex)
+        if (!response.IsSuccessStatusCode)
         {
-            _logger.LogError(ex, "Error extracting recipe from {Url}", url);
+            await LogAndThrowAsync(response);
             return null;
         }
+
+        return await response.Content.ReadFromJsonAsync<RecipeDto>(cancellationToken: ct);
     }
 
     public async Task<List<RecipeDto>> SearchRecipesAsync(string ingredients, CancellationToken ct = default)
     {
-        try
+        var response = await _http.GetAsync(
+            $"/api/recipes/search?ingredients={Uri.EscapeDataString(ingredients)}", ct);
+
+        if (!response.IsSuccessStatusCode)
         {
-            return await _http.GetFromJsonAsync<List<RecipeDto>>(
-                $"/api/recipes/search?ingredients={Uri.EscapeDataString(ingredients)}", ct) ?? new();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error searching recipes by {Ingredients}", ingredients);
+            await LogAndThrowAsync(response, ingredients);
             return new();
         }
+
+        return await response.Content.ReadFromJsonAsync<List<RecipeDto>>(ct) ?? new();
     }
 
     public async Task<RecipeDto?> GetRecipeByIdAsync(Guid id, CancellationToken ct = default)
     {
-        try
+        var response = await _http.GetAsync($"/api/recipes/{id}", ct);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return null;
+
+        if (!response.IsSuccessStatusCode)
         {
-            return await _http.GetFromJsonAsync<RecipeDto>($"/api/recipes/{id}", ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting recipe {Id}", id);
+            await LogAndThrowAsync(response, id.ToString());
             return null;
         }
+
+        return await response.Content.ReadFromJsonAsync<RecipeDto>(cancellationToken: ct);
     }
 
     public async Task<List<RecipeSummaryDto>> GetAllRecipesAsync(CancellationToken ct = default)
     {
-        try
+        var response = await _http.GetAsync("/api/recipes", ct);
+
+        if (!response.IsSuccessStatusCode)
         {
-            return await _http.GetFromJsonAsync<List<RecipeSummaryDto>>("/api/recipes", ct) ?? new();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting all recipes");
+            await LogAndThrowAsync(response, "all");
             return new();
         }
+
+        return await response.Content.ReadFromJsonAsync<List<RecipeSummaryDto>>(ct) ?? new();
+    }
+
+    private async Task LogAndThrowAsync(HttpResponseMessage response, string context = "")
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        ErrorDto? error = null;
+        try { error = JsonSerializer.Deserialize<ErrorDto>(body, JsonOptions); } catch { }
+
+        var errorType = error?.ErrorType ?? "Unknown";
+        var message = error?.Error ?? body;
+
+        _logger.LogError("API error [{StatusCode}] {ErrorType} for {Context}: {Message}",
+            (int)response.StatusCode, errorType, context, message);
+
+        throw new HttpRequestException(
+            $"{errorType}: {message}",
+            null,
+            response.StatusCode);
     }
 }

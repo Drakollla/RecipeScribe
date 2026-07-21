@@ -1,5 +1,6 @@
 using Infrastructure.Extensions;
 using RecipeScribeApi.Extensions;
+using RecipeScribeApi.Middleware;
 using Serilog;
 
 Log.Logger = new LoggerConfiguration()
@@ -24,7 +25,8 @@ try
     var app = builder.Build();
 
     app.UseSerilogRequestLogging();
-    app.UseMiddleware<RecipeScribeApi.Middleware.ExceptionHandlingMiddleware>();
+    app.UseMiddleware<RateLimitingMiddleware>();
+    app.UseMiddleware<ExceptionHandlingMiddleware>();
     app.UseSwagger();
     app.UseSwaggerUI();
     app.UseDefaultFiles();

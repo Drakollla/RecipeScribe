@@ -1,4 +1,4 @@
-﻿using Core.Enums;
+using Core.Enums;
 using Core.Helpers;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -30,7 +30,7 @@ namespace TelegramBot.Strategies
                 await botClient.SendMessage(
                     chatId,
                     TelegramUiElements.GetPreferencesPrompt(parsedDate),
-                    parseMode: ParseMode.Markdown,
+                    parseMode: ParseMode.Html,
                     replyMarkup: TelegramUiElements.GetPreferencesKeyboard(),
                     cancellationToken: cancellationToken
                 );
@@ -40,7 +40,7 @@ namespace TelegramBot.Strategies
                 await botClient.SendMessage(
                     chatId,
                     TelegramUiElements.InvalidDatePrompt,
-                    parseMode: ParseMode.Markdown,
+                    parseMode: ParseMode.Html,
                     cancellationToken: cancellationToken
                 );
             }

@@ -18,7 +18,6 @@ public static class ServiceCollectionExtensions
         services.AddDatabaseServices(configuration);
         services.AddLlmServices(configuration);
 
-        services.AddTransient<RecipeRepository>();
         services.AddTransient<IVideoDownloader, YouTubeDownloader>();
         services.AddTransient<ITranscriber, WhisperTranscriber>();
         services.AddTransient<IRecipeExporter, MarkdownRecipeExporter>();

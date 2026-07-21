@@ -1,4 +1,5 @@
 using Core.Contracts;
+using Core.Enums;
 using Core.Exceptions;
 using Microsoft.AspNetCore.Mvc;
 using RecipeScribeApi.Mapping;
@@ -43,14 +44,10 @@ public class RecipesController : ControllerBase
     }
 
     [HttpGet("search")]
-    public async Task<IActionResult> Search([FromQuery] string? ingredients, [FromQuery] int limit = 10)
+    public async Task<IActionResult> Search([FromQuery] string ingredients, [FromQuery] int limit = 10)
     {
         if (string.IsNullOrWhiteSpace(ingredients))
-        {
-            var all = await _repository.GetAllRecipesAsync();
-            var dtos = all.Select(r => new RecipeSummaryDto(r.Id, r.Title)).ToList();
-            return Ok(dtos);
-        }
+            return BadRequest("ingredients is required.");
 
         var products = ingredients.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
         var recipes = await _repository.SearchByIngredientsAsync(products, limit);
@@ -64,7 +61,7 @@ public class RecipesController : ControllerBase
     {
         _logger.LogInformation("Extracting recipe from {Url}", dto.Url);
         var recipe = await _extractor.ExtractAndSaveRecipeAsync(dto.Url)
-            ?? throw new BadRequestException("Failed to extract recipe.");
+            ?? throw new RecipeScribeException(ErrorType.ParseError, "Failed to extract recipe.");
 
         return CreatedAtRoute("GetRecipeById", new { id = recipe.Id }, recipe.ToDto());
     }
