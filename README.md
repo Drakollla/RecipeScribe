@@ -1,72 +1,52 @@
 # RecipeScribe
 
-Проект позволяет извлекать кулинарные рецепты из видео-источников.
+Проект предназначен для извлечения рецептов из YouTube (Instagram, Pinterest) и экспорта в *.md формат, а также экспорта списков покупок.
 
----
+## Быстрый старт
 
-## Поддерживаемые платформы для импорта
-
-YouTube, Instagram, Pinterest.
-
----
-
-## Ключевые возможности
-
-*   **Импорт рецептов:** Бот последовательно пытается прочитать описание видео и закрепленный комментарий. Если текста нет, запускается локальное распознавание речи (Whisper.net), после чего LLM форматирует полученные данные в структурированный JSON (название, ингредиенты с объемами, упорядоченные шаги приготовления).
-*   **Cписок покупок:** Система автоматически объединяет дублирующиеся ингредиенты для выбранного меню, суммирует их объемы, а затем с помощью LLM распределяет продукты по отделам супермаркета (овощи, мясо, бакалея, специи).
-*   **Интерактивное планирование меню:** По команде `/plan_ai` бот предлагает выбрать день (сегодня, завтра или любую другую дату в ручном вводе) и с помощью LLM подбирает меню из базы данных (в доработке).
-
----
-
-## Стек технологий
-
-*   **Платформа:** .NET 8, EF Core 8 (SQL Server LocalDB / SQLite)
-*   **AI-оркестрация:** Semantic Kernel, служба IChatCompletionService (совместима с OpenAI)
-*   **Транскрибация:** Whisper.net (библиотека-обертка над whisper.cpp, модель ggml-base.bin)
-*   **Загрузка медиа:** YoutubeDLSharp (обертка над yt-dlp)
-*   **Интерфейс:** Telegram.Bot
-
----
-
-## Настройка проекта
-
-### 1. Конфигурация (appsettings.json)
-
-Заполните основные параметры подключения к вашей модели LLM на уровне проекта ConsoleApp:
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=RecipeScribeDb;Trusted_Connection=True;"
-  },
-  "LlmSettings": {
-    "Endpoint": "https://api.groq.com/openai/v1/",
-    "ModelId": "openai/gpt-oss-20b",
-    "TargetLanguage": "Russian"
-  },
-  "ApiKeys": {
-    "Llm": "",
-    "Telegram": ""
-  }
-}
+```powershell
+dotnet build RecipeScribe.sln
 ```
 
-### 2. Хранение секретов (User Secrets)
+Два терминала:
 
-Для локального использования пропишите API-ключи во внутреннее хранилище секретов .NET:
+```powershell
+# Терминал 1 — API (порт 5074)
+dotnet run --project RecipeScribe\RecipeScribeApi
 
-```dotnet user-secrets init --project ConsoleApp```
+# Терминал 2 — Telegram бот
+dotnet run --project RecipeScribe\TelegramBot
+```
 
-```dotnet user-secrets set "ApiKeys:Telegram" "ВАШ_ТОКЕН_ТГ_БОТА" --project ConsoleApp```
+## Настройка
 
-```dotnet user-secrets set "ApiKeys:Llm" "ВАШ_API_КЛЮЧ_ИИ" --project ConsoleApp```
+Секреты (общий `UserSecretsId`):
 
-# Запуск
+```powershell
+dotnet user-secrets set "ApiKeys:Telegram" "<token>"
+dotnet user-secrets set "ApiKeys:Llm" "<llm-key>"
+```
 
-Применение миграций базы данных:
+`Api:BaseUrl` в `TelegramBot/appsettings.json` — должен указывать на API (по умолчанию `http://localhost:5074`).
 
-```dotnet ef database update --project Infrastructure --startup-project ConsoleApp```
+## Миграции
 
-Запуск приложения:
+```powershell
+dotnet ef database update --project RecipeScribe\Infrastructure --startup-project RecipeScribe\RecipeScribeApi
+```
 
-```dotnet run --project ConsoleApp```
+## Архитектура
+
+| Проект | Роль |
+|---|---|
+| `RecipeScribeApi` | ASP.NET Web API (контроллеры, Serilog, global exception middleware) |
+| `TelegramBot` | Worker + Telegram (стратегии команд/колбэков, typed HttpClient → API) |
+| `Infrastructure` | LLM (Semantic Kernel), Whisper, yt-dlp, EF Core + SQLite |
+| `Shared` | DTO для обмена между API и ботом |
+| `Core` | Domain-модели, контракты, enums (zero dependencies) |
+
+## Как работает экстракция
+
+1. **Описание видео** — LLM парсит описание, если оно длиннее 100 символов
+2. **Комментарий** — если в описании нет рецепта, проверяется закреплённый комментарий
+3. **Транскрибация** — если текста нигде нет, скачивается аудио → Whisper → LLM
