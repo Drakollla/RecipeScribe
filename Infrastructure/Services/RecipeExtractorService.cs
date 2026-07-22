@@ -119,7 +119,7 @@ public class RecipeExtractorService : IRecipeExtractorService
     {
         return await LlmRetryHelper.CallWithRetryAsync(
             () => _parser.ParseRecipeAsync(text, cancellationToken),
-            validateResult: recipe => recipe != null && !IsRecipeMissing(recipe),
+            validateResult: recipe => recipe != null && recipe.Title != "Ошибка парсинга JSON",
             logger: _logger,
             logPrefix: "ИИ",
             ct: cancellationToken);

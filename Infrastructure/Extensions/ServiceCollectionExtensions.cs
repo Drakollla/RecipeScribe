@@ -22,6 +22,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<IVideoDownloader, YouTubeDownloader>();
         services.AddTransient<ITranscriber, WhisperTranscriber>();
         services.AddTransient<IRecipeExporter, MarkdownRecipeExporter>();
+        services.AddTransient<IScalingService, ScalingService>();
 
         services.AddScoped<IMealPlanRepository, MealPlanRepository>();
         services.AddScoped<IMealPlannerService, MealPlannerService>();

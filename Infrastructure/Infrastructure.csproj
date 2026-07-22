@@ -30,6 +30,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="Prompts\IngredientScaler.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Prompts\MealPlanner.md">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

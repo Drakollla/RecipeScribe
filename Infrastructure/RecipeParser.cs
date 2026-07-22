@@ -59,7 +59,7 @@ namespace Infrastructure
             if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace)
                 responseText = responseText.Substring(firstBrace, lastBrace - firstBrace + 1);
 
-            responseText = Regex.Replace(responseText, @"\},\s*""([A-Za-z0-9_]+)""\s*:", @"},{""$1"":");
+            responseText = Regex.Replace(responseText, @"\}(\s*)\{", @"},$1{");
 
             try
             {
@@ -68,36 +68,45 @@ namespace Infrastructure
 
                 var recipe = new Recipe
                 {
-                    Title = root.TryGetProperty("Title", out var t) ? t.GetString() ?? "Неизвестный рецепт" : "Неизвестный рецепт",
-                    IsBreakfast = root.TryGetProperty("IsBreakfast", out var bf) && bf.GetBoolean(),
-                    IsLunch = root.TryGetProperty("IsLunch", out var l) && l.GetBoolean(),
-                    IsDinner = root.TryGetProperty("IsDinner", out var d) && d.GetBoolean(),
-                    IsSnack = root.TryGetProperty("IsSnack", out var s) && s.GetBoolean(),
+                    Title = GetProp(root, "Title", "Название")?.GetString() ?? "Неизвестный рецепт",
+                    Servings = TryGetInt(GetProp(root, "Servings", "Порций")) ?? 2,
+                    IsBreakfast = GetBool(GetProp(root, "IsBreakfast", "ДляЗавтрака")),
+                    IsLunch = GetBool(GetProp(root, "IsLunch", "ДляОбеда")),
+                    IsDinner = GetBool(GetProp(root, "IsDinner", "ДляУжина")),
+                    IsSnack = GetBool(GetProp(root, "IsSnack", "ДляПерекуса")),
                 };
 
-                if (root.TryGetProperty("PreparationTips", out var tips) && tips.ValueKind == JsonValueKind.Array)
-                    recipe.PreparationTips = tips.GetRawText();
+                var tipsProp = GetProp(root, "PreparationTips", "СоветыПоПодготовке");
+                if (tipsProp.HasValue && tipsProp.Value.ValueKind == JsonValueKind.Array)
+                    recipe.PreparationTips = tipsProp.Value.GetRawText();
 
-                if (root.TryGetProperty("Ingredients", out var ingredients) && ingredients.ValueKind == JsonValueKind.Array)
+                var nutritionProp = GetProp(root, "Nutrition", "ПитательнаяЦенность");
+                if (nutritionProp.HasValue && nutritionProp.Value.ValueKind == JsonValueKind.Object)
+                    recipe.NutritionJson = nutritionProp.Value.GetRawText();
+
+                var ingredientsProp = GetProp(root, "Ingredients", "Ингредиенты");
+                if (ingredientsProp.HasValue && ingredientsProp.Value.ValueKind == JsonValueKind.Array)
                 {
-                    foreach (var item in ingredients.EnumerateArray())
+                    foreach (var item in ingredientsProp.Value.EnumerateArray())
                     {
                         recipe.Ingredients.Add(new Ingredient
                         {
-                            Name = item.TryGetProperty("Name", out var n) ? n.GetString() ?? string.Empty : string.Empty,
-                            Amount = item.TryGetProperty("Amount", out var a) ? a.GetString() ?? string.Empty : string.Empty
+                            Name = GetProp(item, "Name", "НазваниеИнгредиента", "Ингредиент")?.GetString() ?? string.Empty,
+                            Amount = GetProp(item, "Amount", "Количество")?.GetString() ?? string.Empty
                         });
                     }
                 }
 
-                if (root.TryGetProperty("Steps", out var steps) && steps.ValueKind == JsonValueKind.Array)
+                var stepsProp = GetProp(root, "Steps", "Шаги");
+                if (stepsProp.HasValue && stepsProp.Value.ValueKind == JsonValueKind.Array)
                 {
-                    foreach (var item in steps.EnumerateArray())
+                    foreach (var item in stepsProp.Value.EnumerateArray())
                     {
                         recipe.Steps.Add(new RecipeStep
                         {
-                            Number = item.TryGetProperty("Number", out var num) ? num.GetInt32() : 0,
-                            Description = item.TryGetProperty("Description", out var desc) ? desc.GetString() ?? string.Empty : string.Empty
+                            Number = item.TryGetProperty("Number", out var num) ? num.GetInt32()
+                                : item.TryGetProperty("Номер", out var numRu) ? numRu.GetInt32() : 0,
+                            Description = GetProp(item, "Description", "Описание")?.GetString() ?? string.Empty
                         });
                     }
                 }
@@ -110,5 +119,23 @@ namespace Infrastructure
                     $"LLM returned invalid JSON: {ex.Message}", ex);
             }
         }
+
+        private static JsonElement? GetProp(JsonElement element, params string[] names)
+        {
+            foreach (var name in names)
+                if (element.TryGetProperty(name, out var value))
+                    return value;
+            return null;
+        }
+
+        private static int? TryGetInt(JsonElement? element)
+        {
+            if (element.HasValue && element.Value.TryGetInt32(out var val))
+                return val;
+            return null;
+        }
+
+        private static bool GetBool(JsonElement? element) =>
+            element.HasValue && element.Value.GetBoolean();
     }
 }

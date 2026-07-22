@@ -7,6 +7,7 @@
         WaitingForAiPreferences,
         WaitingForSearchIngredients,
         WaitingForSubstituteIngredient,
-        WaitingForSubstituteRecipe
+        WaitingForSubstituteRecipe,
+        WaitingForServings
     }
 }

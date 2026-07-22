@@ -75,6 +75,7 @@ namespace TelegramBot.Extensions
             services.AddScoped<IMessageCommand, SubstituteCommand>();
             services.AddScoped<IMessageCommand, SubstituteIngredientCommand>();
             services.AddScoped<IMessageCommand, SubstituteRecipeCommand>();
+            services.AddScoped<IMessageCommand, ScaleServingsCommand>();
         }
 
         private static void AddCallbacks(IServiceCollection services)
@@ -85,6 +86,7 @@ namespace TelegramBot.Extensions
             services.AddScoped<ICallbackQuery, PreferencesNoneCallback>();
             services.AddScoped<ICallbackQuery, RegenerateAiCallback>();
             services.AddScoped<ICallbackQuery, ExportToObsidianCallback>();
+            services.AddScoped<ICallbackQuery, ScaleCallback>();
         }
     }
 }

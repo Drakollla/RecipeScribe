@@ -39,9 +39,10 @@ public class RecipeApiClient : IRecipeApiClient
         return await response.Content.ReadFromJsonAsync<List<RecipeDto>>(ct) ?? new();
     }
 
-    public async Task<RecipeDto?> GetRecipeByIdAsync(Guid id, CancellationToken ct = default)
+    public async Task<RecipeDto?> GetRecipeByIdAsync(Guid id, int? servings = null, CancellationToken ct = default)
     {
-        var response = await _http.GetAsync($"/api/recipes/{id}", ct);
+        var url = servings.HasValue ? $"/api/recipes/{id}?servings={servings}" : $"/api/recipes/{id}";
+        var response = await _http.GetAsync(url, ct);
 
         if (response.StatusCode == HttpStatusCode.NotFound)
             return null;

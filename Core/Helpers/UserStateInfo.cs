@@ -8,5 +8,6 @@ namespace Core.Helpers
         public string LastPreferences { get; set; } = string.Empty;
         public DateOnly TargetDate { get; set; }
         public string? LastSubstituteIngredient { get; set; }
+        public Guid? LastRecipeId { get; set; }
     }
 }

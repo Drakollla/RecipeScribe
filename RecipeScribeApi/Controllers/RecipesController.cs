@@ -16,17 +16,20 @@ public class RecipesController : ControllerBase
 {
     private readonly IRecipeRepository _repository;
     private readonly IRecipeExtractorService _extractor;
+    private readonly IScalingService _scalingService;
     private readonly ObsidianSettings _obsidianSettings;
     private readonly ILogger<RecipesController> _logger;
 
     public RecipesController(
         IRecipeRepository repository,
         IRecipeExtractorService extractor,
+        IScalingService scalingService,
         ObsidianSettings obsidianSettings,
         ILogger<RecipesController> logger)
     {
         _repository = repository;
         _extractor = extractor;
+        _scalingService = scalingService;
         _obsidianSettings = obsidianSettings;
         _logger = logger;
     }
@@ -41,10 +44,25 @@ public class RecipesController : ControllerBase
     }
 
     [HttpGet("{id:guid}", Name = "GetRecipeById")]
-    public async Task<IActionResult> GetById(Guid id)
+    public async Task<IActionResult> GetById(Guid id, [FromQuery] int? servings = null, CancellationToken ct = default)
     {
         var recipe = await _repository.GetRecipeByIdAsync(id)
             ?? throw new RecipeNotFoundException(id);
+
+        var targetServings = servings ?? recipe.Servings;
+
+        if (targetServings is < 1 or > 20)
+            throw new BadRequestException("Servings must be between 1 and 20.");
+
+        if (targetServings != recipe.Servings)
+        {
+            var scaledIngredients = await _scalingService.ScaleIngredientsAsync(recipe, targetServings, ct);
+            return Ok(recipe.ToDto() with
+            {
+                Servings = targetServings,
+                Ingredients = scaledIngredients.Select(i => new IngredientDto(i.Name, i.Amount)).ToList()
+            });
+        }
 
         return Ok(recipe.ToDto());
     }

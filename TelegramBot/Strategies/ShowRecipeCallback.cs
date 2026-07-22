@@ -20,7 +20,7 @@ namespace TelegramBot.Strategies
             string recipeIdStr = callbackQuery.Data!.Split(':')[1];
 
             if (Guid.TryParse(recipeIdStr, out var recipeId))
-                await _recipeFlow.SendRecipeDocumentAsync(botClient, callbackQuery.Message!.Chat.Id, recipeId, cancellationToken);
+                await _recipeFlow.SendRecipeDocumentAsync(botClient, callbackQuery.Message!.Chat.Id, recipeId);
         }
     }
 }

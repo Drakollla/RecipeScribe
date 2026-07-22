@@ -40,16 +40,7 @@ public class TelegramRecipeFlow
 
             await botClient.DeleteMessage(chatId, statusMessage.Id, cancellationToken: cancellationToken);
 
-            var (stream, fileName) = BuildRecipeDocument(recipe);
-            await using (stream.ConfigureAwait(false))
-                await botClient.SendDocument(
-                    chatId: chatId,
-                    document: InputFile.FromStream(stream, fileName),
-                    caption: $"<b>Рецепт:</b> <i>{HtmlHelper.Escape(recipe.Title)}</i>",
-                    parseMode: Telegram.Bot.Types.Enums.ParseMode.Html,
-                    replyMarkup: ExportButton(recipe.Id),
-                    cancellationToken: cancellationToken
-                );
+            await SendRecipeDocumentAsync(botClient, chatId, recipe, recipe.Servings, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -116,11 +107,11 @@ public class TelegramRecipeFlow
         }
     }
 
-    public async Task SendRecipeDocumentAsync(ITelegramBotClient botClient, long chatId, Guid recipeId, CancellationToken cancellationToken)
+    public async Task SendRecipeDocumentAsync(ITelegramBotClient botClient, long chatId, Guid recipeId, int? servings = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            var recipe = await _recipeApi.GetRecipeByIdAsync(recipeId, cancellationToken);
+            var recipe = await _recipeApi.GetRecipeByIdAsync(recipeId, servings, cancellationToken);
 
             if (recipe == null)
             {
@@ -128,16 +119,7 @@ public class TelegramRecipeFlow
                 return;
             }
 
-            var (stream, fileName) = BuildRecipeDocument(recipe);
-            await using (stream.ConfigureAwait(false))
-                await botClient.SendDocument(
-                    chatId: chatId,
-                    document: InputFile.FromStream(stream, fileName),
-                    caption: $"<b>Рецепт:</b> <i>{HtmlHelper.Escape(recipe.Title)}</i>",
-                    parseMode: Telegram.Bot.Types.Enums.ParseMode.Html,
-                    replyMarkup: ExportButton(recipe.Id),
-                    cancellationToken: cancellationToken
-                );
+            await SendRecipeDocumentAsync(botClient, chatId, recipe, servings ?? recipe.Servings, cancellationToken);
         }
         catch (HttpRequestException ex)
         {
@@ -155,6 +137,20 @@ public class TelegramRecipeFlow
         }
     }
 
+    private async Task SendRecipeDocumentAsync(ITelegramBotClient botClient, long chatId, RecipeDto recipe, int servings, CancellationToken cancellationToken)
+    {
+        var (stream, fileName) = BuildRecipeDocument(recipe);
+        await using (stream.ConfigureAwait(false))
+            await botClient.SendDocument(
+                chatId: chatId,
+                document: InputFile.FromStream(stream, fileName),
+                caption: BuildCaption(recipe.Title, servings),
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.Html,
+                replyMarkup: BuildKeyboard(recipe.Id, servings),
+                cancellationToken: cancellationToken
+            );
+    }
+
     public string FormatRecipeToMarkdown(RecipeDto dto)
     {
         var recipe = new Recipe
@@ -164,13 +160,40 @@ public class TelegramRecipeFlow
             Steps = dto.Steps.Select(s => new RecipeStep { Number = s.Number, Description = s.Description }).ToList(),
             PreparationTips = dto.PreparationTips is { Count: > 0 }
                 ? JsonSerializer.Serialize(dto.PreparationTips.Select(t => new PreparationTip { Ingredient = t.Ingredient, Tip = t.Tip }).ToList())
-                : null
+                : null,
+            NutritionJson = MapNutritionJson(dto.Nutrition)
         };
 
         return RecipeMarkdownBuilder.Build(recipe);
     }
 
-    private (MemoryStream Stream, string FileName) BuildRecipeDocument(RecipeDto recipe)
+    private static string? MapNutritionJson(NutritionDto? dto)
+    {
+        if (dto == null) return null;
+
+        var nutrition = new Nutrition
+        {
+            PerServing = MapValues(dto.PerServing),
+            Per100g = MapValues(dto.Per100g),
+            Total = MapValues(dto.Total)
+        };
+
+        return JsonSerializer.Serialize(nutrition);
+    }
+
+    private static NutritionValues? MapValues(NutritionValuesDto? dto)
+    {
+        return dto == null ? null : new NutritionValues
+        {
+            Calories = dto.Calories,
+            Protein = dto.Protein,
+            Fat = dto.Fat,
+            Carbs = dto.Carbs,
+            Fiber = dto.Fiber
+        };
+    }
+
+    public (MemoryStream Stream, string FileName) BuildRecipeDocument(RecipeDto recipe)
     {
         string formattedRecipe = FormatRecipeToMarkdown(recipe);
         byte[] mdBytes = Encoding.UTF8.GetBytes(formattedRecipe);
@@ -189,9 +212,15 @@ public class TelegramRecipeFlow
         return (new MemoryStream(mdBytes), $"{safeName}.md");
     }
 
-    private static InlineKeyboardMarkup ExportButton(Guid recipeId)
+    private static string BuildCaption(string title, int servings)
+    {
+        return $"<b>Рецепт:</b> <i>{HtmlHelper.Escape(title)}</i>\n<b>Порции:</b> {servings}";
+    }
+
+    private static InlineKeyboardMarkup BuildKeyboard(Guid recipeId, int servings)
     {
         return new InlineKeyboardMarkup([
+            [InlineKeyboardButton.WithCallbackData("🍽 Изменить порции", $"scale:{recipeId}")],
             [InlineKeyboardButton.WithCallbackData("Сохранить в Obsidian", $"export_obsidian:{recipeId}")]
         ]);
     }
