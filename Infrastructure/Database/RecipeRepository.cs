@@ -32,26 +32,21 @@ namespace Infrastructure.Database
             if (searchProducts == null || !searchProducts.Any())
                 return new List<Recipe>();
 
-            var terms = searchProducts.Select(p => p.Trim().ToLower()).ToList();
-
-            var filteredRecipes = await FindAll(trackChanges: false)
+            var recipes = await FindAll(trackChanges: false)
                 .Include(r => r.Ingredients)
                 .Include(r => r.Steps)
-                .Where(r => r.Ingredients.Any(i => terms.Any(term => i.Name.ToLower().Contains(term))))
                 .ToListAsync();
 
-            var sortedRecipes = filteredRecipes
-                .Select(recipe => new
-                {
-                    Recipe = recipe,
-                    MatchCount = terms.Count(term => recipe.Ingredients.Any(i => i.Name.ToLower().Contains(term)))
-                })
-                .OrderByDescending(x => x.MatchCount)
-                .Select(x => x.Recipe)
+            var filteredRecipes = recipes
+                .Where(r => r.Ingredients.Any(i =>
+                    searchProducts.Any(p => i.Name.Contains(p, StringComparison.OrdinalIgnoreCase))))
+                .OrderByDescending(r =>
+                    searchProducts.Count(p =>
+                        r.Ingredients.Any(i => i.Name.Contains(p, StringComparison.OrdinalIgnoreCase))))
                 .Take(limit)
                 .ToList();
 
-            return sortedRecipes;
+            return filteredRecipes;
         }
 
         public async Task<Recipe?> GetRecipeByIdAsync(Guid id)
