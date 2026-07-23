@@ -17,7 +17,8 @@ public static class MealPlanMapping
                 MealType.Snack => "Перекус",
                 _ => i.MealType.ToString()
             },
-            new RecipeSummaryDto(i.Recipe.Id, i.Recipe.Title)
+            new RecipeSummaryDto(i.Recipe.Id, i.Recipe.Title),
+            i.Portions
         )).ToList();
 
         return new MealPlanDto(plan.Id, plan.Date.ToString("yyyy-MM-dd"), items);

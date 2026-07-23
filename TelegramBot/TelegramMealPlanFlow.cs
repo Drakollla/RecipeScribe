@@ -85,7 +85,7 @@ public class TelegramMealPlanFlow
         foreach (var item in plan.Items)
         {
             sb.AppendLine($"<b>{HtmlHelper.Escape(item.MealType.ToUpper())}:</b>");
-            sb.AppendLine($"<i>{HtmlHelper.Escape(item.Recipe.Title)}</i>");
+            sb.AppendLine($"<i>{HtmlHelper.Escape(item.Recipe.Title)}</i>  ({item.Portions} порц{(item.Portions == 1 ? "ия" : "ии")})");
             sb.AppendLine();
         }
 

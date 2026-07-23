@@ -112,6 +112,17 @@ internal class MealPlanRepository : IMealPlanRepository
         return result;
     }
 
+    public async Task UpdateUserAsync(long telegramChatId, int defaultServings)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.TelegramChatId == telegramChatId);
+
+        if (user is not null)
+        {
+            user.DefaultServings = defaultServings;
+            await _db.SaveChangesAsync();
+        }
+    }
+
     public async Task<List<MealPlanItem>> GetPlanItemsWithRecipesAsync(Guid mealPlanId)
     {
         return await _db.MealPlanItems

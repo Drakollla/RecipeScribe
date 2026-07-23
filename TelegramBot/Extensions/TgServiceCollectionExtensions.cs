@@ -45,6 +45,7 @@ namespace TelegramBot.Extensions
             services.AddTransient<IMealPlanApiClient>(sp => CreateApiClient<MealPlanApiClient>(sp));
             services.AddTransient<ISubstitutionApiClient>(sp => CreateApiClient<SubstitutionApiClient>(sp));
             services.AddTransient<IExportApiClient>(sp => CreateApiClient<ExportApiClient>(sp));
+            services.AddTransient<IUserApiClient>(sp => CreateApiClient<UserApiClient>(sp));
         }
 
         private static T CreateApiClient<T>(IServiceProvider sp) where T : class
@@ -76,6 +77,8 @@ namespace TelegramBot.Extensions
             services.AddScoped<IMessageCommand, SubstituteIngredientCommand>();
             services.AddScoped<IMessageCommand, SubstituteRecipeCommand>();
             services.AddScoped<IMessageCommand, ScaleServingsCommand>();
+            services.AddScoped<IMessageCommand, SettingsCommand>();
+            services.AddScoped<IMessageCommand, SettingsValueCommand>();
         }
 
         private static void AddCallbacks(IServiceCollection services)

@@ -8,6 +8,7 @@
         WaitingForSearchIngredients,
         WaitingForSubstituteIngredient,
         WaitingForSubstituteRecipe,
-        WaitingForServings
+        WaitingForServings,
+        WaitingForSettings
     }
 }
