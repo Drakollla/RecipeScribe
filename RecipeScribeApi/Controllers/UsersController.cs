@@ -1,6 +1,7 @@
 using Core.Contracts;
 using Core.Exceptions;
 using Microsoft.AspNetCore.Mvc;
+using Shared.DTOs;
 
 namespace RecipeScribeApi.Controllers;
 
@@ -24,7 +25,7 @@ public class UsersController : ControllerBase
         if (user is null)
             user = await _repo.GetOrCreateUserAsync(chatId);
 
-        return Ok(new { defaultServings = user.DefaultServings });
+        return Ok(new { defaultServings = user.DefaultServings, obsidianVaultPath = user.ObsidianVaultPath });
     }
 
     [HttpPatch("{chatId}/settings")]
@@ -33,9 +34,7 @@ public class UsersController : ControllerBase
         if (dto.DefaultServings < 1 || dto.DefaultServings > 20)
             throw new BadRequestException("DefaultServings must be between 1 and 20.");
 
-        await _repo.UpdateUserAsync(chatId, dto.DefaultServings);
-        return Ok(new { defaultServings = dto.DefaultServings });
+        await _repo.UpdateUserAsync(chatId, dto.DefaultServings, dto.ObsidianVaultPath);
+        return Ok(new { defaultServings = dto.DefaultServings, obsidianVaultPath = dto.ObsidianVaultPath });
     }
 }
-
-public record UpdateUserSettingsDto(int DefaultServings);

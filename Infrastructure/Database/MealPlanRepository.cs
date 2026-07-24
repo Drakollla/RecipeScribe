@@ -112,13 +112,17 @@ internal class MealPlanRepository : IMealPlanRepository
         return result;
     }
 
-    public async Task UpdateUserAsync(long telegramChatId, int defaultServings)
+    public async Task UpdateUserAsync(long telegramChatId, int defaultServings, string? obsidianVaultPath = null)
     {
         var user = await _db.Users.FirstOrDefaultAsync(u => u.TelegramChatId == telegramChatId);
 
         if (user is not null)
         {
             user.DefaultServings = defaultServings;
+
+            if (obsidianVaultPath != null)
+                user.ObsidianVaultPath = obsidianVaultPath;
+
             await _db.SaveChangesAsync();
         }
     }

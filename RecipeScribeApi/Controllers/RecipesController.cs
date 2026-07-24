@@ -18,6 +18,7 @@ public class RecipesController : ControllerBase
     private readonly IRecipeExtractorService _extractor;
     private readonly IScalingService _scalingService;
     private readonly ObsidianSettings _obsidianSettings;
+    private readonly IMealPlanRepository _mealPlanRepo;
     private readonly ILogger<RecipesController> _logger;
 
     public RecipesController(
@@ -25,12 +26,14 @@ public class RecipesController : ControllerBase
         IRecipeExtractorService extractor,
         IScalingService scalingService,
         ObsidianSettings obsidianSettings,
+        IMealPlanRepository mealPlanRepo,
         ILogger<RecipesController> logger)
     {
         _repository = repository;
         _extractor = extractor;
         _scalingService = scalingService;
         _obsidianSettings = obsidianSettings;
+        _mealPlanRepo = mealPlanRepo;
         _logger = logger;
     }
 
@@ -91,12 +94,13 @@ public class RecipesController : ControllerBase
     }
 
     [HttpPost("{id:guid}/export-to-obsidian")]
-    public async Task<IActionResult> ExportToObsidian(Guid id)
+    public async Task<IActionResult> ExportToObsidian(Guid id, [FromQuery] long chatId = 0)
     {
         var recipe = await _repository.GetRecipeByIdAsync(id)
             ?? throw new RecipeNotFoundException(id);
 
-        var vaultPath = _obsidianSettings.VaultPath;
+        var user = await _mealPlanRepo.GetOrCreateUserAsync(chatId);
+        var vaultPath = user.ObsidianVaultPath ?? _obsidianSettings.VaultPath;
 
         if (string.IsNullOrWhiteSpace(vaultPath))
             return BadRequest(new { error = "Obsidian vault path is not configured." });

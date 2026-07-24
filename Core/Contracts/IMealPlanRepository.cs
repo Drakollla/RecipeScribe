@@ -13,5 +13,5 @@ public interface IMealPlanRepository
         Expression<Func<Recipe, bool>> categoryPredicate,
         List<Guid> excludeIds, string? primaryKeyword);
     Task<List<MealPlanItem>> GetPlanItemsWithRecipesAsync(Guid mealPlanId);
-    Task UpdateUserAsync(long telegramChatId, int defaultServings);
+    Task UpdateUserAsync(long telegramChatId, int defaultServings, string? obsidianVaultPath = null);
 }
