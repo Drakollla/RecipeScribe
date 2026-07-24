@@ -25,8 +25,10 @@ public class MealPlansController : ControllerBase
         if (targetDate is null)
             throw new BadRequestException("Invalid date format. Use YYYY-MM-DD.");
 
-        var plan = await _mealPlanner.GetPlanForDateAsync(chatId, targetDate.Value)
-            ?? throw new MealPlanNotFoundException(targetDate.Value);
+        var plan = await _mealPlanner.GetPlanForDateAsync(chatId, targetDate.Value);
+
+        if (plan is null)
+            return NoContent();
 
         return Ok(plan.ToDto());
     }
