@@ -2,7 +2,6 @@
 using Core.Enums;
 using Core.Exceptions;
 using Core.Helpers;
-using Core.Tools;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using YoutubeDLSharp;
