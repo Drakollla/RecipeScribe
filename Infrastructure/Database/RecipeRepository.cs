@@ -29,6 +29,7 @@ namespace Infrastructure.Database
 
         public async Task<List<Recipe>> SearchByIngredientsAsync(List<string> searchProducts, int limit = 10)
         {
+            // TODO: попробовать векторный поиск (embeddings) вместо in-memory фильтрации
             if (searchProducts == null || !searchProducts.Any())
                 return new List<Recipe>();
 

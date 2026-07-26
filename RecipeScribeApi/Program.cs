@@ -27,10 +27,12 @@ try
     app.UseSerilogRequestLogging();
     app.UseMiddleware<RateLimitingMiddleware>();
     app.UseMiddleware<ExceptionHandlingMiddleware>();
-    app.UseSwagger();
-    app.UseSwaggerUI();
     app.UseDefaultFiles();
     app.UseStaticFiles();
+
+    //app.UseSwagger();
+    //app.UseSwaggerUI();
+
     app.MapControllers();
 
     app.Run();
