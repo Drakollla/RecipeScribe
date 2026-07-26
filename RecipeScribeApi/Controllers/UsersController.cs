@@ -19,11 +19,7 @@ public class UsersController : ControllerBase
     [HttpGet("{chatId}/settings")]
     public async Task<IActionResult> GetSettings(long chatId)
     {
-        var plan = await _repo.GetPlanForDateAsync(chatId, DateOnly.FromDateTime(DateTime.Today));
-        var user = plan?.User;
-
-        if (user is null)
-            user = await _repo.GetOrCreateUserAsync(chatId);
+        var user = await _repo.GetOrCreateUserAsync(chatId);
 
         return Ok(new { defaultServings = user.DefaultServings, obsidianVaultPath = user.ObsidianVaultPath });
     }
