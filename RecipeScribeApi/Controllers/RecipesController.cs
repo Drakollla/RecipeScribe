@@ -137,4 +137,11 @@ public class RecipesController : ControllerBase
             suggestions.Select(s => new SuggestionDto(s.Name, s.Description)).ToList()
         ));
     }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        await _repository.DeleteRecipeAsync(id);
+        return NoContent();
+    }
 }

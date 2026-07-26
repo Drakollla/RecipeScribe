@@ -79,5 +79,16 @@ namespace Infrastructure.Database
                 .Include(r => r.Steps)
                 .FirstOrDefaultAsync(r => r.VideoUrl == targetUrl);
         }
+
+        public async Task DeleteRecipeAsync(Guid id)
+        {
+            var recipe = await Context.Recipes.FindAsync(id);
+            
+            if (recipe != null)
+            {
+                Delete(recipe);
+                await SaveAsync();
+            }
+        }
     }
 }
