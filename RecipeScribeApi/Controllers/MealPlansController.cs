@@ -41,7 +41,7 @@ public class MealPlansController : ControllerBase
         if (targetDate is null)
             throw new BadRequestException("Invalid date format. Use YYYY-MM-DD.");
 
-        var plan = await _mealPlanner.GenerateSmartPlanAsync(chatId, targetDate.Value, dto.Preferences ?? "");
+        var plan = await _mealPlanner.GenerateAutoPlanAsync(chatId, targetDate.Value, dto.Preferences ?? "");
 
         return CreatedAtAction(nameof(GetPlan), new { chatId, date = plan.Date.ToString("yyyy-MM-dd") }, plan.ToDto());
     }

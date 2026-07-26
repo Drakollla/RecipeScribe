@@ -9,7 +9,7 @@ namespace Core.Contracts
 
         Task<MealPlan> CreatePlanManualAsync(long telegramChatId, DateOnly date, Dictionary<MealType, Guid> mealRecipes);
 
-        Task<MealPlan> GenerateSmartPlanAsync(long telegramChatId, DateOnly date, string userRequest);
+        Task<MealPlan> GenerateAutoPlanAsync(long telegramChatId, DateOnly date, string userRequest);
 
         Task<string> GetShoppingListAsync(Guid mealPlanId);
     }

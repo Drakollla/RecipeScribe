@@ -1,7 +1,6 @@
 ﻿using Core.Contracts;
 using Core.Enums;
 using Core.Exceptions;
-using Core.Helpers;
 using Core.Models;
 using Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
@@ -9,28 +8,27 @@ using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using System.Globalization;
 using System.Text;
-using System.Text.Json;
 
 namespace Infrastructure.Services;
 
 public class MealPlannerService : IMealPlannerService
 {
     private readonly IMealPlanRepository _repo;
+    private readonly IScalingService _scalingService;
     private readonly Kernel _kernel;
     private readonly LlmSettings _llmSettings;
-    private readonly IScalingService _scalingService;
     private readonly ILogger<MealPlannerService> _logger;
 
     public MealPlannerService(IMealPlanRepository repo,
+        IScalingService scalingService,
         Kernel kernel,
         LlmSettings llmSettings,
-        IScalingService scalingService,
         ILogger<MealPlannerService> logger)
     {
         _repo = repo;
+        _scalingService = scalingService;
         _kernel = kernel;
         _llmSettings = llmSettings;
-        _scalingService = scalingService;
         _logger = logger;
     }
 
@@ -60,106 +58,39 @@ public class MealPlannerService : IMealPlannerService
         return await _repo.CreatePlanAsync(newPlan);
     }
 
-    public async Task<MealPlan> GenerateSmartPlanAsync(long telegramChatId, DateOnly date, string userRequest)
+    public async Task<MealPlan> GenerateAutoPlanAsync(long telegramChatId, DateOnly date, string userRequest)
     {
         var user = await _repo.GetOrCreateUserAsync(telegramChatId);
+        var portions = user.DefaultServings > 0 ? user.DefaultServings : 2;
 
-        var recentRecipeIds = await _repo.GetRecentRecipeIdsAsync(user.Id, date);
-        string? primaryKeyword = GetPrimaryKeyword(userRequest);
+        var selectedIds = new List<Guid>();
+        var mealRecipes = new Dictionary<MealType, Guid>();
 
-        var breakfasts = await _repo.GetCategoryCandidatesAsync(r => r.IsBreakfast, recentRecipeIds, primaryKeyword);
-        var lunches = await _repo.GetCategoryCandidatesAsync(r => r.IsLunch, recentRecipeIds, primaryKeyword);
-        var dinners = await _repo.GetCategoryCandidatesAsync(r => r.IsDinner, recentRecipeIds, primaryKeyword);
+        var mealTypes = new[] { MealType.Breakfast, MealType.Lunch, MealType.Dinner };
 
-        var allCandidates = breakfasts.Concat(lunches).Concat(dinners).DistinctBy(r => r.Id).ToList();
-        var uniqueCount = allCandidates.Select(c => c.Id).Distinct().Count();
-
-        if (uniqueCount == 0)
-            throw new RecipeScribeException(ErrorType.ParseError, "No recipes found matching the meal type categories.");
-
-        if (uniqueCount < 3)
+        foreach (var mealType in mealTypes)
         {
-            _logger.LogInformation("Only {Count} unique recipes available — allowing duplicates in meal plan.", uniqueCount);
-        }
-
-        const int MaxAttempts = 3;
-
-        for (int attempt = 0; attempt < MaxAttempts; attempt++)
-        {
-            var llmResponse = await AskLlmForPlanAsync(allCandidates, userRequest, attempt, uniqueCount);
-            var mealRecipes = new Dictionary<MealType, Guid>();
-
-            if (Guid.TryParse(llmResponse.Breakfast, out var breakfastId))
-                mealRecipes[MealType.Breakfast] = breakfastId;
-
-            if (Guid.TryParse(llmResponse.Lunch, out var lunchId))
-                mealRecipes[MealType.Lunch] = lunchId;
-
-            if (Guid.TryParse(llmResponse.Dinner, out var dinnerId))
-                mealRecipes[MealType.Dinner] = dinnerId;
-
-            var selectedIds = mealRecipes.Values;
-            if (uniqueCount >= 3 && selectedIds.Count != selectedIds.Distinct().Count())
+            var recipe = await _repo.GetRecipeByMealTypeAsync(mealType, selectedIds);
+            if (recipe != null)
             {
-                _logger.LogWarning("LLM returned duplicate recipes (attempt {Attempt}/{Max})", attempt + 1, MaxAttempts);
-                continue;
+                selectedIds.Add(recipe.Id);
+                mealRecipes[mealType] = recipe.Id;
             }
-
-            return await CreatePlanManualAsync(telegramChatId, date, mealRecipes);
         }
 
-        throw new RecipeScribeException(ErrorType.LlmFailure, "LLM returned duplicate recipes after 3 attempts.");
+        if (mealRecipes.Count == 0)
+            throw new RecipeScribeException(ErrorType.ParseError, "No recipes with meal-type flags found. Add flags to recipes first.");
+
+        var plan = await CreatePlanManualAsync(telegramChatId, date, mealRecipes);
+
+        foreach (var id in selectedIds)
+            await _repo.UpdateRecipeLastPlannedAtAsync(id);
+
+        return plan;
     }
 
-    private async Task<LlmMealPlanResponse> AskLlmForPlanAsync(List<RecipeCandidate> candidates, string userRequest, int attempt = 0, int uniqueCount = 3)
-    {
-        var recipesJson = JsonSerializer.Serialize(candidates, new JsonSerializerOptions { WriteIndented = false });
-        string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "MealPlanner.md");
-        string promptTemplate = await File.ReadAllTextAsync(promptPath);
-
-        string prompt = promptTemplate
-            .Replace("{recipesList}", recipesJson)
-            .Replace("{userRequest}", userRequest)
-            .Replace("{targetLanguage}", _llmSettings.TargetLanguage);
-
-        if (attempt > 0 && uniqueCount >= 3)
-        {
-            prompt += "\n\nIMPORTANT: Your previous response contained duplicate recipes. Breakfast, Lunch, and Dinner MUST be three different recipes. Do NOT repeat any recipe ID.";
-        }
-
-        var executionSettings = new OpenAIPromptExecutionSettings { Temperature = _llmSettings.Temperature };
-
-        return await LlmRetryHelper.CallWithRetryAsync(
-            async () =>
-            {
-                var rawResponse = await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, executionSettings, _logger, "Планировщик");
-                var cleanJson = LlmRetryHelper.StripCodeFence(rawResponse);
-
-                var response = JsonSerializer.Deserialize<LlmMealPlanResponse>(cleanJson, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-
-                return response ?? throw new RecipeScribeException(ErrorType.LlmFailure, "LLM returned an empty response.");
-            },
-            logger: _logger,
-            logPrefix: "Планировщик");
-    }
-
-    private static string? GetPrimaryKeyword(string userRequest)
-    {
-        var keywords = userRequest.ToLower()
-            .Split(new[] { ' ', ',', '.', '!' }, StringSplitOptions.RemoveEmptyEntries)
-            .Where(w => w.Length > 3)
-            .ToList();
-
-        return keywords.FirstOrDefault();
-    }
-
-    public async Task<MealPlan?> GetPlanForDateAsync(long telegramChatId, DateOnly date)
-    {
-        return await _repo.GetPlanForDateAsync(telegramChatId, date);
-    }
+    public async Task<MealPlan?> GetPlanForDateAsync(long telegramChatId, DateOnly date) =>
+        await _repo.GetPlanForDateAsync(telegramChatId, date);
 
     public async Task<string> GetShoppingListAsync(Guid mealPlanId)
     {

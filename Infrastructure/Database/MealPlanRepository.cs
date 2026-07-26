@@ -1,15 +1,12 @@
 using Core.Contracts;
+using Core.Enums;
 using Core.Models;
 using Microsoft.EntityFrameworkCore;
-using System.Linq.Expressions;
 
 namespace Infrastructure.Database;
 
 internal class MealPlanRepository : IMealPlanRepository
 {
-    private const int RecentRecipeWindowDays = 3;
-    private const int MaxCandidates = 10;
-
     private readonly RecipeDbContext _db;
 
     public MealPlanRepository(RecipeDbContext db)
@@ -63,53 +60,32 @@ internal class MealPlanRepository : IMealPlanRepository
             .FirstAsync(mp => mp.Id == plan.Id);
     }
 
-    public async Task<List<Guid>> GetRecentRecipeIdsAsync(Guid userId, DateOnly date)
+    public async Task<Recipe?> GetRecipeByMealTypeAsync(MealType mealType, List<Guid> excludeIds)
     {
-        var startDate = date.AddDays(-RecentRecipeWindowDays);
-        var endDate = date.AddDays(RecentRecipeWindowDays);
+        var recipes = _db.Recipes.Where(r => !excludeIds.Contains(r.Id));
 
-        return await _db.MealPlanItems
-            .Where(mpi => mpi.MealPlan.UserId == userId && mpi.MealPlan.Date >= startDate && mpi.MealPlan.Date <= endDate)
-            .Select(mpi => mpi.RecipeId)
-            .Distinct()
-            .ToListAsync();
+        recipes = mealType switch
+        {
+            MealType.Breakfast => recipes.Where(r => r.IsBreakfast),
+            MealType.Lunch => recipes.Where(r => r.IsLunch),
+            MealType.Dinner => recipes.Where(r => r.IsDinner),
+            _ => throw new ArgumentOutOfRangeException(nameof(mealType))
+        };
+
+        return await recipes
+            .OrderBy(r => r.LastPlannedAt ?? DateTime.MinValue)
+            .FirstOrDefaultAsync();
     }
 
-    public async Task<List<RecipeCandidate>> GetCategoryCandidatesAsync(
-        Expression<Func<Recipe, bool>> categoryPredicate,
-        List<Guid> excludeIds, string? primaryKeyword)
+    public async Task UpdateRecipeLastPlannedAtAsync(Guid recipeId)
     {
-        var query = _db.Recipes
-            .Where(categoryPredicate)
-            .Where(r => !excludeIds.Contains(r.Id));
+        var recipe = await _db.Recipes.FindAsync(recipeId);
 
-        if (!string.IsNullOrEmpty(primaryKeyword))
+        if (recipe != null)
         {
-            query = query.OrderByDescending(r =>
-                r.Title.Contains(primaryKeyword) ||
-                r.Ingredients.Any(i => i.Name.Contains(primaryKeyword)));
+            recipe.LastPlannedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
         }
-        else
-        {
-            query = query.OrderBy(r => EF.Functions.Random());
-        }
-
-        var result = await query
-            .Take(MaxCandidates)
-            .Select(r => new RecipeCandidate(r.Id, r.Title))
-            .ToListAsync();
-
-        if (!result.Any())
-        {
-            result = await _db.Recipes
-                .Where(categoryPredicate)
-                .OrderBy(r => EF.Functions.Random())
-                .Take(MaxCandidates)
-                .Select(r => new RecipeCandidate(r.Id, r.Title))
-                .ToListAsync();
-        }
-
-        return result;
     }
 
     public async Task UpdateUserAsync(long telegramChatId, int defaultServings, string? obsidianVaultPath = null)

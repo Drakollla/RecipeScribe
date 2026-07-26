@@ -12,6 +12,7 @@ public class Recipe
     public bool IsSnack { get; set; }
     public string? PreparationTips { get; set; }
     public string? NutritionJson { get; set; }
+    public DateTime? LastPlannedAt { get; set; }
     public List<Ingredient> Ingredients { get; set; } = new();
     public List<RecipeStep> Steps { get; set; } = new();
 }
