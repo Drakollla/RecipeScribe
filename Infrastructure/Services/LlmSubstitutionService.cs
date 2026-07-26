@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Core.Contracts;
+using Core.Models;
 using Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
@@ -19,12 +21,15 @@ public class LlmSubstitutionService : IIngredientSubstitutor
         _logger = logger;
     }
 
-    public async Task<string> GetSubstitutionsAsync(string ingredient, string recipeTitle, CancellationToken cancellationToken = default)
+    public async Task<List<SubstitutionSuggestion>> GetSuggestionsAsync(string ingredient, string recipeTitle, CancellationToken cancellationToken = default)
     {
-        var prompt = $"В рецепте \"{recipeTitle}\" есть ингредиент \"{ingredient}\". " +
-                     $"Предложи 3 варианта замены с кратким пояснением почему. " +
-                     $"Ответь строго на языке: {_llmSettings.TargetLanguage}. " +
-                     $"Формат ответа:\n1. {{вариант}} — {{почему}}\n2. {{вариант}} — {{почему}}\n3. {{вариант}} — {{почему}}";
+        string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "IngredientSubstituter.md");
+        string promptTemplate = await File.ReadAllTextAsync(promptPath, cancellationToken);
+
+        string prompt = promptTemplate
+            .Replace("{ingredient}", ingredient)
+            .Replace("{recipeTitle}", recipeTitle)
+            .Replace("{targetLanguage}", _llmSettings.TargetLanguage);
 
         var executionSettings = new OpenAIPromptExecutionSettings
         {
@@ -33,8 +38,20 @@ public class LlmSubstitutionService : IIngredientSubstitutor
 
         var result = await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, executionSettings, _logger, "Замена", cancellationToken);
 
-        _logger.LogInformation("Замена для {Ingredient} в рецепте {Recipe}: {Result}", ingredient, recipeTitle, result);
+        var json = LlmRetryHelper.StripCodeFence(result);
 
-        return result;
+        try
+        {
+            var suggestions = JsonSerializer.Deserialize<List<SubstitutionSuggestion>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return suggestions ?? new List<SubstitutionSuggestion>();
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse substitution suggestions JSON: {Json}", json);
+            return new List<SubstitutionSuggestion>
+            {
+                new() { Name = result, Description = "Предложенный вариант замены" }
+            };
+        }
     }
 }

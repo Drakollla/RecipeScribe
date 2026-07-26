@@ -18,7 +18,8 @@ public class SubstitutionsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Substitute([FromBody] CreateSubstitutionDto dto)
     {
-        var result = await _substitutor.GetSubstitutionsAsync(dto.Ingredient, dto.RecipeTitle);
+        var suggestions = await _substitutor.GetSuggestionsAsync(dto.Ingredient, dto.RecipeTitle);
+        var result = string.Join("\n", suggestions.Select((s, i) => $"{i + 1}. {s.Name} — {s.Description}"));
 
         return Ok(new SubstitutionDto(result));
     }

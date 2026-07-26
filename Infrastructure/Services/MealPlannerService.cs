@@ -133,7 +133,7 @@ public class MealPlannerService : IMealPlannerService
             async () =>
             {
                 var rawResponse = await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, executionSettings, _logger, "Планировщик");
-                var cleanJson = rawResponse.Replace("```json", "").Replace("```", "").Trim();
+                var cleanJson = LlmRetryHelper.StripCodeFence(rawResponse);
 
                 var response = JsonSerializer.Deserialize<LlmMealPlanResponse>(cleanJson, new JsonSerializerOptions
                 {

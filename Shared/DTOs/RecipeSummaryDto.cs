@@ -1,3 +1,3 @@
 namespace Shared.DTOs;
 
-public record RecipeSummaryDto(Guid Id, string Title);
+public record RecipeSummaryDto(Guid Id, string Title, List<string>? IngredientNames = null);

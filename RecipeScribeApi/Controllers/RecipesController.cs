@@ -2,7 +2,6 @@ using Core.Contracts;
 using Core.Enums;
 using Core.Exceptions;
 using Core.Helpers;
-using Infrastructure.Settings;
 using Microsoft.AspNetCore.Mvc;
 using RecipeScribeApi.Mapping;
 using Shared.DTOs;
@@ -17,7 +16,7 @@ public class RecipesController : ControllerBase
     private readonly IRecipeRepository _repository;
     private readonly IRecipeExtractorService _extractor;
     private readonly IScalingService _scalingService;
-    private readonly ObsidianSettings _obsidianSettings;
+    private readonly IIngredientSubstitutor _substitutor;
     private readonly IMealPlanRepository _mealPlanRepo;
     private readonly ILogger<RecipesController> _logger;
 
@@ -25,14 +24,14 @@ public class RecipesController : ControllerBase
         IRecipeRepository repository,
         IRecipeExtractorService extractor,
         IScalingService scalingService,
-        ObsidianSettings obsidianSettings,
+        IIngredientSubstitutor substitutor,
         IMealPlanRepository mealPlanRepo,
         ILogger<RecipesController> logger)
     {
         _repository = repository;
         _extractor = extractor;
         _scalingService = scalingService;
-        _obsidianSettings = obsidianSettings;
+        _substitutor = substitutor;
         _mealPlanRepo = mealPlanRepo;
         _logger = logger;
     }
@@ -41,7 +40,7 @@ public class RecipesController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var recipes = await _repository.GetAllRecipesAsync();
-        var dtos = recipes.Select(r => new RecipeSummaryDto(r.Id, r.Title)).ToList();
+        var dtos = recipes.Select(r => new RecipeSummaryDto(r.Id, r.Title, r.Ingredients.Select(i => i.Name).ToList())).ToList();
         
         return Ok(dtos);
     }
@@ -78,7 +77,7 @@ public class RecipesController : ControllerBase
 
         var products = ingredients.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
         var recipes = await _repository.SearchByIngredientsAsync(products, limit);
-        var result = recipes.Select(r => new RecipeSummaryDto(r.Id, r.Title)).ToList();
+        var result = recipes.Select(r => new RecipeSummaryDto(r.Id, r.Title, r.Ingredients.Select(i => i.Name).ToList())).ToList();
 
         return Ok(result);
     }
@@ -100,7 +99,7 @@ public class RecipesController : ControllerBase
             ?? throw new RecipeNotFoundException(id);
 
         var user = await _mealPlanRepo.GetOrCreateUserAsync(chatId);
-        var vaultPath = user.ObsidianVaultPath ?? _obsidianSettings.VaultPath;
+        var vaultPath = user.ObsidianVaultPath;
 
         if (string.IsNullOrWhiteSpace(vaultPath))
             return BadRequest(new { error = "Obsidian vault path is not configured." });
@@ -124,5 +123,18 @@ public class RecipesController : ControllerBase
         _logger.LogInformation("Recipe {Id} exported to Obsidian: {Path}", id, fullPath);
         
         return Ok(new { path = fullPath });
+    }
+
+    [HttpPost("{id:guid}/substitute")]
+    public async Task<IActionResult> SubstituteIngredient(Guid id, [FromBody] SubstituteIngredientDto dto)
+    {
+        var recipe = await _repository.GetRecipeByIdAsync(id)
+            ?? throw new RecipeNotFoundException(id);
+
+        var suggestions = await _substitutor.GetSuggestionsAsync(dto.Ingredient, recipe.Title);
+
+        return Ok(new SubstitutionSuggestionsDto(
+            suggestions.Select(s => new SuggestionDto(s.Name, s.Description)).ToList()
+        ));
     }
 }

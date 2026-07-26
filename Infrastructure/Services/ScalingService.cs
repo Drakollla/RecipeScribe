@@ -39,24 +39,7 @@ internal class ScalingService : IScalingService
 
         var result = await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, logPrefix: "Scaling", ct: ct);
 
-        var clean = result.Trim();
-        
-        if (clean.StartsWith("```json")) 
-            clean = clean["```json".Length..];
-        
-        if (clean.StartsWith("```")) 
-            clean = clean["```".Length..];
-        
-        if (clean.EndsWith("```")) 
-            clean = clean[..^"```".Length];
-
-        int firstBracket = clean.IndexOf('[');
-        int lastBracket = clean.LastIndexOf(']');
-
-        if (firstBracket != -1 && lastBracket != -1 && lastBracket > firstBracket)
-            clean = clean.Substring(firstBracket, lastBracket - firstBracket + 1);
-        
-        clean = clean.Trim();
+        var clean = LlmRetryHelper.StripCodeFence(result);
 
         var scaled = JsonSerializer.Deserialize<List<ScaledIngredient>>(clean, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 

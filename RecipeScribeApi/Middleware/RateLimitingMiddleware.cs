@@ -38,7 +38,7 @@ public class RateLimitingMiddleware
                     context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                     context.Response.ContentType = "application/json";
                     await context.Response.WriteAsync(
-                        $$"""{""error"":"Too many requests. Try again in {{_window.TotalSeconds}} seconds.","errorType":"RateLimited"}""");
+                        $$"""{""error"":"Слишком много запросов. Попробуйте через {{_window.TotalSeconds}} секунд.","errorType":"RateLimited"}""");
                     return;
                 }
             }

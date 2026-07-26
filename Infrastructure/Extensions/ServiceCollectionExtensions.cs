@@ -16,8 +16,6 @@ public static class ServiceCollectionExtensions
     {
         services.AddDatabaseServices(configuration);
         services.AddLlmServices(configuration);
-        var obsidianSettings = configuration.GetSection("Obsidian").Get<ObsidianSettings>() ?? new ObsidianSettings();
-        services.AddSingleton(obsidianSettings);
 
         services.AddTransient<IVideoDownloader, YouTubeDownloader>();
         services.AddTransient<ITranscriber, WhisperTranscriber>();
