@@ -282,6 +282,30 @@
         .settings-form input:focus {
             border-color: var(--accent-color);
         }
+        .folder-picker {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .folder-picker input {
+            flex: 1;
+        }
+        .folder-picker button {
+            padding: 10px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--card-bg);
+            color: var(--text-muted);
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+            line-height: 1;
+        }
+        .folder-picker button:hover {
+            border-color: var(--accent-color);
+            color: var(--text-main);
+        }
         .settings-form .save-btn {
             margin-top: 24px;
             padding: 10px 28px;
@@ -812,23 +836,29 @@
 
     // Настройка пути к Obsidian
     async function setObsidianPath() {
-        const path = prompt('Введите полный путь к папке Obsidian Vault:', '');
-        if (path === null) return;
+        switchMode('settings', document.getElementById('mode-settings'));
+    }
 
-        showLoading();
-        try {
-            const r = await fetch('/api/users/0/settings', {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ defaultServings: portions, obsidianVaultPath: path })
-            });
-            if (!r.ok) throw new Error((await r.json()).error || 'Ошибка сохранения');
-            hideLoading();
-            updateObsidianStatus(path);
-        } catch(e) {
-            hideLoading();
-            renderResults(`<h2>Ошибка</h2><p>${e.message}</p>`);
+    // --- Выбор папки через нативный проводник ---
+    let _folderBrowserHandle = null;
+
+    function openFolderBrowser() {
+        if (!window.showDirectoryPicker) {
+            alert('Ваш браузер не поддерживает выбор папки. Введите путь вручную.');
+            return;
         }
+        showDirectoryPicker().then(function (handle) {
+            _folderBrowserHandle = handle;
+            document.getElementById('settingsObsidianPath').value = handle.name;
+            updateObsidianStatus(handle.name);
+            var msgEl = document.getElementById('settingsSaveMsg');
+            msgEl.innerText = '✓ Папка "' + handle.name + '" выбрана. Экспорт будет работать через браузер.';
+            msgEl.style.color = '#4caf50';
+            setTimeout(function () { msgEl.innerText = ''; }, 4000);
+        }).catch(function (e) {
+            if (e.name !== 'AbortError')
+                alert('Ошибка выбора папки: ' + e.message);
+        });
     }
 
     // Склонение существительных
@@ -860,7 +890,10 @@
                 '<input type="number" id="settingsServings" min="1" max="20" value="' + (data.defaultServings || 2) + '" style="width:100px;">' +
 
                 '<label>Путь к Obsidian Vault</label>' +
+                '<div class="folder-picker">' +
                 '<input type="text" id="settingsObsidianPath" value="' + (data.obsidianVaultPath || '') + '" placeholder="C:\\Users\\...\\Obsidian Vault">' +
+                '<button type="button" onclick="openFolderBrowser()" title="Выбрать папку">📁 Обзор</button>' +
+                '</div>' +
 
                 '<br><button class="save-btn" onclick="saveSettings()">💾 Сохранить</button>' +
                 '<span id="settingsSaveMsg" style="margin-left:12px;"></span>' +
@@ -1318,6 +1351,29 @@
     // Экспорт в Obsidian
     async function exportToObsidian(id) {
         try {
+            if (_folderBrowserHandle) {
+                var perm = await _folderBrowserHandle.requestPermission({ mode: 'readwrite' });
+                if (perm === 'granted') {
+                    const mr = await fetch(`/api/recipes/${id}/markdown`);
+                    if (!mr.ok) throw new Error('Не удалось получить разметку рецепта');
+                    const md = await mr.text();
+
+                    var titleMatch = md.match(/^# (.+)/m);
+                    var safeName = titleMatch
+                        ? titleMatch[1].replace(/[<>:"/\\|?*]/g, '_').substring(0, 100).replace(/\.+$/, '') || 'recipe'
+                        : 'recipe';
+                    var fileName = safeName + '.md';
+
+                    const fileHandle = await _folderBrowserHandle.getFileHandle(fileName, { create: true });
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(md);
+                    await writable.close();
+
+                    alert('Рецепт успешно сохранён в Obsidian!');
+                    return;
+                }
+            }
+
             const r = await fetch(`/api/recipes/${id}/export-to-obsidian?chatId=0`, { method: 'POST' });
             const data = await r.json();
             if (r.ok) {

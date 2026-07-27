@@ -138,6 +138,15 @@ public class RecipesController : ControllerBase
         ));
     }
 
+    [HttpGet("{id:guid}/markdown")]
+    public async Task<IActionResult> GetMarkdown(Guid id)
+    {
+        var recipe = await _repository.GetRecipeByIdAsync(id)
+            ?? throw new RecipeNotFoundException(id);
+
+        return Content(RecipeMarkdownBuilder.Build(recipe), "text/markdown", Encoding.UTF8);
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
