@@ -282,29 +282,9 @@
         .settings-form input:focus {
             border-color: var(--accent-color);
         }
-        .folder-picker {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-        .folder-picker input {
-            flex: 1;
-        }
-        .folder-picker button {
-            padding: 10px 14px;
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            background: var(--card-bg);
-            color: var(--text-muted);
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s;
-            white-space: nowrap;
-            line-height: 1;
-        }
-        .folder-picker button:hover {
-            border-color: var(--accent-color);
-            color: var(--text-main);
+        .settings-form input[type="text"] {
+            width: 100%;
+            box-sizing: border-box;
         }
         .settings-form .save-btn {
             margin-top: 24px;
@@ -698,6 +678,60 @@
             color: var(--accent-hover);
             border-bottom-color: var(--accent-color);
         }
+
+        /* Folder browser modal */
+        .folder-modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.6);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .folder-modal {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            width: 520px; max-height: 70vh;
+            display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+        .folder-modal-header {
+            padding: 16px 20px 0;
+            font-size: 16px; font-weight: 600;
+        }
+        .folder-modal-breadcrumb {
+            padding: 8px 20px;
+            font-size: 13px; color: var(--accent-color);
+            word-break: break-all; cursor: pointer;
+        }
+        .folder-modal-breadcrumb span:hover { text-decoration: underline; }
+        .folder-modal-list {
+            flex: 1; overflow-y: auto;
+            padding: 0 20px;
+        }
+        .folder-modal-item {
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.15s;
+        }
+        .folder-modal-item:hover { background: var(--hover-bg); }
+        .folder-modal-footer {
+            padding: 12px 20px;
+            border-top: 1px solid var(--border-color);
+            display: flex; gap: 8px; justify-content: flex-end;
+        }
+        .folder-modal-footer button {
+            padding: 8px 20px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .folder-modal-footer .folder-select-btn {
+            background: var(--accent-color);
+            color: #fff; border-color: var(--accent-color);
+        }
     </style>
 </head>
 <body>
@@ -769,6 +803,8 @@
     <div class="results-container" id="resultsContainer"></div>
 </div>
 
+<div id="folderBrowserModal" style="display:none;"></div>
+
 <script>
     let currentMode = 'youtube';
     let portions = 2;
@@ -816,6 +852,7 @@
             const r = await fetch('/api/users/0/settings');
             if (r.ok) {
                 const data = await r.json();
+                _settingsCache = data;
                 if (data.defaultServings) {
                     portions = data.defaultServings;
                     document.getElementById('portionVal').innerText = portions;
@@ -839,25 +876,89 @@
         switchMode('settings', document.getElementById('mode-settings'));
     }
 
-    // --- Выбор папки через нативный проводник ---
-    let _folderBrowserHandle = null;
-
-    function openFolderBrowser() {
-        if (!window.showDirectoryPicker) {
-            alert('Ваш браузер не поддерживает выбор папки. Введите путь вручную.');
-            return;
-        }
-        showDirectoryPicker().then(function (handle) {
-            _folderBrowserHandle = handle;
-            updateObsidianStatus(handle.name);
-            var msgEl = document.getElementById('settingsSaveMsg');
-            msgEl.innerText = '✓ Папка "' + handle.name + '" выбрана. Экспорт без полного пути — только через браузер.';
-            msgEl.style.color = '#4caf50';
-            setTimeout(function () { msgEl.innerText = ''; }, 5000);
-        }).catch(function (e) {
-            if (e.name !== 'AbortError')
-                alert('Ошибка выбора папки: ' + e.message);
+    async function browseFolder() {
+        openFolderBrowser(function(path) {
+            document.getElementById('settingsObsidianPath').value = path;
         });
+    }
+
+    function openFolderBrowser(onSelect) {
+        var modal = document.getElementById('folderBrowserModal');
+        var currentPath = '';
+
+        function render(path) {
+            currentPath = path || '';
+            fetch('/api/filesystem/directories?path=' + encodeURIComponent(currentPath))
+                .then(function(r) {
+                    if (!r.ok) throw new Error('API not available');
+                    return r.json();
+                })
+                .then(function(data) {
+                    var html = '<div class="folder-modal-overlay" onclick="if(event.target===this)closeFolderBrowser()">' +
+                        '<div class="folder-modal">' +
+                        '<div class="folder-modal-header">Выберите папку</div>';
+
+                    if (data.current) {
+                        html += '<div class="folder-modal-breadcrumb">';
+                        var parts = data.current.replace(/\\/g, '/').split('/');
+                        var accumulated = '';
+                        parts.forEach(function(part, i) {
+                            if (i === 0) { accumulated = part; }
+                            else { accumulated += '\\' + part; }
+                            var p = accumulated;
+                            html += '<span onclick="openFolderBrowser.__navigate(\'' + p.replace(/\\/g, '\\\\') + '\')">' + part + '/</span>';
+                        });
+                        html += '</div>';
+                    }
+
+                    html += '<div class="folder-modal-list">';
+                    if (!data.current) {
+                        data.dirs.forEach(function(d) {
+                            html += '<div class="folder-modal-item" onclick="openFolderBrowser.__navigate(\'' + d.replace(/\\/g, '\\\\') + '\')">💻 ' + d + '</div>';
+                        });
+                    } else {
+                        var parent = data.current.replace(/\\[^\\]+$/, '');
+                        if (parent !== data.current) {
+                            html += '<div class="folder-modal-item" onclick="openFolderBrowser.__navigate(\'' + parent.replace(/\\/g, '\\\\') + '\')">⬆️ ..</div>';
+                        }
+                        data.dirs.forEach(function(d) {
+                            var full = currentPath + '\\' + d;
+                            html += '<div class="folder-modal-item" onclick="openFolderBrowser.__navigate(\'' + full.replace(/\\/g, '\\\\') + '\')">📁 ' + d + '</div>';
+                        });
+                        if (data.dirs.length === 0 && !data.error) {
+                            html += '<div style="padding:12px;color:var(--text-muted);">Папки отсутствуют</div>';
+                        }
+                        if (data.error) {
+                            html += '<div style="padding:12px;color:var(--text-muted);">' + data.error + '</div>';
+                        }
+                    }
+                    html += '</div>';
+
+                    html += '<div class="folder-modal-footer">';
+                    if (currentPath) {
+                        html += '<button class="folder-select-btn" onclick="openFolderBrowser.__select()">✓ Выбрать</button>';
+                    }
+                    html += '<button onclick="closeFolderBrowser()">Отмена</button>';
+                    html += '</div></div></div>';
+                    modal.innerHTML = html;
+                    modal.style.display = 'block';
+                })
+                .catch(function(e) {
+                    alert('Не удалось загрузить проводник. Убедитесь, что сервер запущен.\n' + e.message);
+                });
+        }
+
+        openFolderBrowser.__navigate = function(p) { render(p); };
+        openFolderBrowser.__select = function() {
+            if (onSelect) onSelect(currentPath);
+            closeFolderBrowser();
+        };
+        render('');
+    }
+
+    function closeFolderBrowser() {
+        document.getElementById('folderBrowserModal').style.display = 'none';
+        document.getElementById('folderBrowserModal').innerHTML = '';
     }
 
     // Склонение существительных
@@ -888,10 +989,10 @@
                 '<label>Порций по умолчанию</label>' +
                 '<input type="number" id="settingsServings" min="1" max="20" value="' + (data.defaultServings || 2) + '" style="width:100px;">' +
 
-                '<label>Путь к Obsidian Vault</label>' +
-                '<div class="folder-picker">' +
-                '<input type="text" id="settingsObsidianPath" value="' + (data.obsidianVaultPath || '') + '" placeholder="C:\\Users\\...\\Obsidian Vault">' +
-                '<button type="button" onclick="openFolderBrowser()" title="Выбрать папку">📁 Обзор</button>' +
+                '<label>Путь к Obsidian Vault (папка с рецептами)</label>' +
+                '<div style="display:flex;gap:8px;align-items:center;">' +
+                '<input type="text" id="settingsObsidianPath" value="' + (data.obsidianVaultPath || '') + '" placeholder="D:\\обсидиан\\Заметки\\Заметки\\Рецепты" style="flex:1;">' +
+                '<button type="button" onclick="browseFolder()" style="padding:10px 14px;border:1px solid var(--border-color);border-radius:10px;background:var(--card-bg);color:var(--text-muted);font-size:14px;cursor:pointer;">📁 Обзор</button>' +
                 '</div>' +
 
                 '<br><button class="save-btn" onclick="saveSettings()">💾 Сохранить</button>' +
@@ -921,7 +1022,9 @@
             hideLoading();
             if (!r.ok) throw new Error((await r.json()).error || 'Ошибка сохранения');
 
-            // обновляем глобальные переменные
+            // обновляем глобальные переменные и кэш
+            _settingsCache.defaultServings = servings;
+            _settingsCache.obsidianVaultPath = obsidianPath;
             portions = servings;
             document.getElementById('portionVal').innerText = portions;
             updatePortionsHint();
@@ -1348,31 +1451,12 @@
     }
 
     // Экспорт в Obsidian
+    function isAbsolutePath(p) {
+        return /^[A-Za-z]:\\/.test(p);
+    }
+
     async function exportToObsidian(id) {
         try {
-            if (_folderBrowserHandle) {
-                var perm = await _folderBrowserHandle.requestPermission({ mode: 'readwrite' });
-                if (perm === 'granted') {
-                    const mr = await fetch(`/api/recipes/${id}/markdown`);
-                    if (!mr.ok) throw new Error('Не удалось получить разметку рецепта');
-                    const md = await mr.text();
-
-                    var titleMatch = md.match(/^# (.+)/m);
-                    var safeName = titleMatch
-                        ? titleMatch[1].replace(/[<>:"/\\|?*]/g, '_').substring(0, 100).replace(/\.+$/, '') || 'recipe'
-                        : 'recipe';
-                    var fileName = safeName + '.md';
-
-                    const fileHandle = await _folderBrowserHandle.getFileHandle(fileName, { create: true });
-                    const writable = await fileHandle.createWritable();
-                    await writable.write(md);
-                    await writable.close();
-
-                    alert('Рецепт успешно сохранён в Obsidian!');
-                    return;
-                }
-            }
-
             const r = await fetch(`/api/recipes/${id}/export-to-obsidian?chatId=0`, { method: 'POST' });
             const data = await r.json();
             if (r.ok) {

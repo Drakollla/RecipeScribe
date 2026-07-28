@@ -104,6 +104,11 @@ public class RecipesController : ControllerBase
         if (string.IsNullOrWhiteSpace(vaultPath))
             return BadRequest(new { error = "Obsidian vault path is not configured." });
 
+        if (!Path.IsPathRooted(vaultPath))
+            return BadRequest(new { error = "Obsidian vault path must be an absolute path (e.g., D:\\обсидиан\\Заметки\\Заметки\\Рецепты)." });
+
+        Directory.CreateDirectory(vaultPath);
+
         var invalid = Path.GetInvalidFileNameChars();
         var safeName = string.Concat(recipe.Title.Select(c => invalid.Contains(c) ? '_' : c));
         

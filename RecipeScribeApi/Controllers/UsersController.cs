@@ -21,7 +21,14 @@ public class UsersController : ControllerBase
     {
         var user = await _repo.GetOrCreateUserAsync(chatId);
 
-        return Ok(new { defaultServings = user.DefaultServings, obsidianVaultPath = user.ObsidianVaultPath });
+        var path = user.ObsidianVaultPath;
+        if (!string.IsNullOrEmpty(path) && !Path.IsPathRooted(path))
+        {
+            await _repo.UpdateUserAsync(chatId, user.DefaultServings, null);
+            path = null;
+        }
+
+        return Ok(new { defaultServings = user.DefaultServings, obsidianVaultPath = path });
     }
 
     [HttpPatch("{chatId}/settings")]
