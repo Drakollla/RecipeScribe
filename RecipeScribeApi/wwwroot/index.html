@@ -849,12 +849,11 @@
         }
         showDirectoryPicker().then(function (handle) {
             _folderBrowserHandle = handle;
-            document.getElementById('settingsObsidianPath').value = handle.name;
             updateObsidianStatus(handle.name);
             var msgEl = document.getElementById('settingsSaveMsg');
-            msgEl.innerText = '✓ Папка "' + handle.name + '" выбрана. Экспорт будет работать через браузер.';
+            msgEl.innerText = '✓ Папка "' + handle.name + '" выбрана. Экспорт без полного пути — только через браузер.';
             msgEl.style.color = '#4caf50';
-            setTimeout(function () { msgEl.innerText = ''; }, 4000);
+            setTimeout(function () { msgEl.innerText = ''; }, 5000);
         }).catch(function (e) {
             if (e.name !== 'AbortError')
                 alert('Ошибка выбора папки: ' + e.message);
