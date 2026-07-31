@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Core.Contracts;
 using Core.Models;
+using Infrastructure.Helpers;
 using Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
@@ -38,7 +39,7 @@ public class LlmSubstitutionService : IIngredientSubstitutor
 
         var result = await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, executionSettings, _logger, "Замена", cancellationToken);
 
-        var json = LlmRetryHelper.StripCodeFence(result);
+        var json = JsonTextCleaner.StripCodeFence(result);
 
         try
         {

@@ -86,10 +86,12 @@ public class RecipesController : ControllerBase
     public async Task<IActionResult> Extract([FromBody] CreateRecipeDto dto)
     {
         _logger.LogInformation("Extracting recipe from {Url}", dto.Url);
-        var recipe = await _extractor.ExtractAndSaveRecipeAsync(dto.Url)
-            ?? throw new RecipeScribeException(ErrorType.ParseError, "Failed to extract recipe.");
+        var recipes = await _extractor.ExtractAndSaveRecipeAsync(dto.Url);
 
-        return CreatedAtRoute("GetRecipeById", new { id = recipe.Id }, recipe.ToDto());
+        if (recipes.Count == 0)
+            throw new RecipeScribeException(ErrorType.ParseError, "Failed to extract recipe.");
+
+        return Ok(recipes.Select(r => r.ToDto()).ToList());
     }
 
     [HttpPost("{id:guid}/export-to-obsidian")]

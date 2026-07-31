@@ -24,23 +24,40 @@ public class TelegramRecipeFlow
 
     public async Task ProcessVideoRecipeAsync(ITelegramBotClient botClient, long chatId, string url, CancellationToken cancellationToken)
     {
-        var statusMessage = await botClient.SendMessage(chatId, "Извлекаю рецепт из видео...", cancellationToken: cancellationToken);
+        var statusMessage = await botClient.SendMessage(chatId, "Извлекаю рецепты из видео...", cancellationToken: cancellationToken);
 
         try
         {
             await botClient.EditMessageText(chatId, statusMessage.Id, "Обрабатываю видео...", cancellationToken: cancellationToken);
 
-            var recipe = await _recipeApi.ExtractRecipeAsync(url, cancellationToken);
-
-            if (recipe == null)
-            {
-                await botClient.EditMessageText(chatId, statusMessage.Id, "Ошибка: не удалось извлечь рецепт.", cancellationToken: cancellationToken);
-                return;
-            }
+            var recipes = await _recipeApi.ExtractRecipeAsync(url, cancellationToken);
 
             await botClient.DeleteMessage(chatId, statusMessage.Id, cancellationToken: cancellationToken);
 
-            await SendRecipeDocumentAsync(botClient, chatId, recipe, recipe.Servings, cancellationToken);
+            if (recipes.Count == 0)
+            {
+                await botClient.SendMessage(chatId, "Ошибка: не удалось извлечь рецепт.", cancellationToken: cancellationToken);
+                return;
+            }
+
+            if (recipes.Count == 1)
+            {
+                var r = recipes[0];
+                await SendRecipeDocumentAsync(botClient, chatId, r, r.Servings, cancellationToken);
+            }
+            else
+            {
+                var buttons = new List<List<InlineKeyboardButton>>();
+                foreach (var r in recipes)
+                    buttons.Add([InlineKeyboardButton.WithCallbackData(r.Title, $"show_recipe:{r.Id}")]);
+
+                await botClient.SendMessage(
+                    chatId: chatId,
+                    text: $"Найдено рецептов: {recipes.Count}. Выберите один для просмотра:",
+                    replyMarkup: new InlineKeyboardMarkup(buttons),
+                    cancellationToken: cancellationToken
+                );
+            }
         }
         catch (OperationCanceledException)
         {

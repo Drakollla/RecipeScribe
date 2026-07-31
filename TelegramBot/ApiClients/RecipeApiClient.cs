@@ -18,14 +18,14 @@ public class RecipeApiClient : IRecipeApiClient
         _logger = logger;
     }
 
-    public async Task<RecipeDto?> ExtractRecipeAsync(string url, CancellationToken ct = default)
+    public async Task<List<RecipeDto>> ExtractRecipeAsync(string url, CancellationToken ct = default)
     {
         var response = await _http.PostAsJsonAsync("/api/recipes/extract", new CreateRecipeDto(url), ct);
 
         if (!response.IsSuccessStatusCode)
             throw await LogAndCreateExceptionAsync(response);
 
-        return await response.Content.ReadFromJsonAsync<RecipeDto>(cancellationToken: ct);
+        return await response.Content.ReadFromJsonAsync<List<RecipeDto>>(ct) ?? new();
     }
 
     public async Task<List<RecipeDto>> SearchRecipesAsync(string ingredients, CancellationToken ct = default)

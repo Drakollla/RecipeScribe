@@ -68,17 +68,18 @@ namespace Infrastructure.Database
                 .FirstOrDefaultAsync(r => r.Id == id);
         }
 
-        public async Task<Recipe?> GetRecipeByUrlAsync(string url)
+        public async Task<List<Recipe>> GetRecipesByUrlAsync(string url)
         {
             if (string.IsNullOrWhiteSpace(url))
-                return null;
+                return new List<Recipe>();
 
             string targetUrl = url.Trim();
 
             return await Context.Recipes
                 .Include(r => r.Ingredients)
                 .Include(r => r.Steps)
-                .FirstOrDefaultAsync(r => r.VideoUrl == targetUrl);
+                .Where(r => r.VideoUrl == targetUrl)
+                .ToListAsync();
         }
 
         public async Task DeleteRecipeAsync(Guid id)

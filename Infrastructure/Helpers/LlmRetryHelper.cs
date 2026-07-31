@@ -4,7 +4,7 @@ using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Infrastructure.Services
 {
-    internal static class LlmRetryHelper
+    public static class LlmRetryHelper
     {
         private const int MaxRetries = 5;
 
@@ -91,28 +91,6 @@ namespace Infrastructure.Services
             }
 
             throw new InvalidOperationException("Unreachable");
-        }
-
-        public static string StripCodeFence(string raw)
-        {
-            var result = raw.Trim();
-            if (result.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
-                result = result["```json".Length..];
-            else if (result.StartsWith("```"))
-                result = result["```".Length..];
-
-            if (result.EndsWith("```"))
-                result = result[..^"```".Length];
-
-            result = result.Trim();
-
-            // extract content between first [ and last ] if still wrapped
-            int firstBracket = result.IndexOf('[');
-            int lastBracket = result.LastIndexOf(']');
-            if (firstBracket != -1 && lastBracket != -1 && lastBracket > firstBracket)
-                result = result.Substring(firstBracket, lastBracket - firstBracket + 1);
-
-            return result.Trim();
         }
 
         private static bool IsClientError(HttpRequestException ex) =>
