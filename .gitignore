@@ -367,3 +367,4 @@ publish.bat
 *.db
 *.db-shm
 *.db-wal
+**/appsettings.json
