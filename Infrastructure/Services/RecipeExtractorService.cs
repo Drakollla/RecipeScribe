@@ -28,30 +28,30 @@ public class RecipeExtractorService : IRecipeExtractorService
         _logger = logger;
     }
 
-    public async Task<Recipe?> ExtractAndSaveRecipeAsync(string url, Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
+    public async Task<List<Recipe>> ExtractAndSaveRecipeAsync(string url, Func<string, Task>? onProgress = null, CancellationToken cancellationToken = default)
     {
-        var existingRecipe = await _repository.GetRecipeByUrlAsync(url);
+        var existingRecipes = await _repository.GetRecipesByUrlAsync(url);
 
-        if (existingRecipe != null)
+        if (existingRecipes.Count > 0)
         {
             if (onProgress != null)
-                await onProgress("Рецепт найден в локальной базе данных! Загружаю...");
+                await onProgress("Рецепты найдены в локальной базе данных! Загружаю...");
 
-            return existingRecipe;
+            return existingRecipes;
         }
 
         var metadata = await _downloader.DownloadAudioAsync(url, cancellationToken);
-        Recipe? recipe = null;
+        List<Recipe> recipes = new();
 
         if (!string.IsNullOrWhiteSpace(metadata.Description) && metadata.Description.Length > 100)
         {
             if (onProgress != null)
                 await onProgress("Видео загружено. Пробую найти рецепт в описании...");
 
-            recipe = await ParseRecipeAsync(metadata.Description, cancellationToken);
+            recipes = await TryParseRecipesAsync(metadata.Description, cancellationToken);
         }
 
-        if (IsRecipeMissing(recipe))
+        if (recipes.Count == 0)
         {
             if (onProgress != null)
                 await onProgress("Рецепт в описании не найден. Проверяю закрепленный комментарий...");
@@ -59,23 +59,23 @@ public class RecipeExtractorService : IRecipeExtractorService
             string? firstComment = await _downloader.GetFirstCommentAsync(url, cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(firstComment))
-                recipe = await ParseRecipeAsync(firstComment, cancellationToken);
+                recipes = await TryParseRecipesAsync(firstComment, cancellationToken);
         }
 
-        if (IsRecipeMissing(recipe))
+        if (recipes.Count == 0)
         {
             string transcript = await GetOrCreateTranscriptAsync(metadata, onProgress, cancellationToken);
 
             if (onProgress != null)
-                await onProgress("Распознавание завершено. Форматирую рецепт через ИИ...");
+                await onProgress("Распознавание завершено. Форматирую рецепты через ИИ...");
 
-            recipe = await ParseRecipeAsync(transcript, cancellationToken);
+            recipes = await TryParseRecipesAsync(transcript, cancellationToken);
         }
 
-        if (recipe != null)
+        foreach (var recipe in recipes)
             await SaveRecipeAsync(recipe, url, metadata.Title);
 
-        return recipe;
+        return recipes;
     }
 
     private async Task<string> GetOrCreateTranscriptAsync(ViewMetadata metadata, Func<string, Task>? onProgress, CancellationToken ct)
@@ -115,14 +115,23 @@ public class RecipeExtractorService : IRecipeExtractorService
         await _repository.SaveRecipeAsync(recipe);
     }
 
-    private async Task<Recipe?> ParseRecipeAsync(string text, CancellationToken cancellationToken)
+    private async Task<List<Recipe>> TryParseRecipesAsync(string text, CancellationToken cancellationToken)
     {
-        return await LlmRetryHelper.CallWithRetryAsync(
-            () => _parser.ParseRecipeAsync(text, cancellationToken),
-            validateResult: recipe => recipe != null && recipe.Title != "Ошибка парсинга JSON",
-            logger: _logger,
-            logPrefix: "ИИ",
-            ct: cancellationToken);
+        try
+        {
+            var recipes = await LlmRetryHelper.CallWithRetryAsync(
+                () => _parser.ParseRecipesAsync(text, cancellationToken),
+                validateResult: list => list.Any(r => !IsRecipeMissing(r)),
+                logger: _logger,
+                logPrefix: "ИИ",
+                ct: cancellationToken);
+
+            return recipes.Where(r => !IsRecipeMissing(r)).ToList();
+        }
+        catch
+        {
+            return new List<Recipe>();
+        }
     }
 
     private bool IsRecipeMissing(Recipe? recipe)

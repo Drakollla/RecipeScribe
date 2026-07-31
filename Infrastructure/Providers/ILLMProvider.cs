@@ -1,11 +1,10 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Infrastructure.Providers
+namespace Infrastructure.Providers;
+
+public interface ILLMProvider
 {
-    public interface ILLMProvider
-    {
-        string Name { get; }
-        void Register(IServiceCollection services, IConfiguration config);
-    }
+    string Name { get; }
+    void Register(IServiceCollection services, IConfiguration config);
 }

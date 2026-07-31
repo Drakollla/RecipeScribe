@@ -95,38 +95,64 @@ public class MealPlannerService : IMealPlannerService
     public async Task<string> GetShoppingListAsync(Guid mealPlanId)
     {
         var planItems = await _repo.GetPlanItemsWithRecipesAsync(mealPlanId);
+        var scaledIngredients = await ScaleAllIngredientsAsync(planItems);
 
+        if (!scaledIngredients.Any())
+            return "*Список покупок пуст.*";
+
+        var flatListString = BuildFlatIngredientList(scaledIngredients);
+
+        try
+        {
+            var categorizedList = await CategorizeShoppingListAsync(flatListString);
+            return $"*СПИСОК ПОКУПОК ПО ОТДЕЛАМ:*\n\n{FormatCategorizedList(categorizedList)}";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[Ошибка ИИ при категоризации списка покупок]");
+            return BuildFallbackShoppingList(flatListString);
+        }
+    }
+
+    private async Task<List<Ingredient>> ScaleAllIngredientsAsync(List<MealPlanItem> planItems)
+    {
         var scaledIngredients = new List<Ingredient>();
+
         foreach (var item in planItems)
         {
             var ingredients = await _scalingService.ScaleIngredientsAsync(item.Recipe, item.Portions);
             scaledIngredients.AddRange(ingredients);
         }
 
-        if (!scaledIngredients.Any())
-            return "*Список покупок пуст.*";
+        return scaledIngredients;
+    }
 
-        var allIngredients = scaledIngredients;
-
-        var flatList = allIngredients
+    private static string BuildFlatIngredientList(List<Ingredient> ingredients)
+    {
+        var flatList = ingredients
             .GroupBy(i => i.Name.Trim().ToLowerInvariant())
-            .Select(g =>
-            {
-                var amounts = g.Select(i => i.Amount.Trim())
-                               .Where(a => !string.IsNullOrWhiteSpace(a))
-                               .Distinct()
-                               .ToList();
-
-                var name = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(g.Key);
-                var amountText = amounts.Any() ? $" ({string.Join(" + ", amounts)})" : "";
-
-                return $"{name}{amountText}";
-            })
+            .Select(FormatIngredientGroup)
             .OrderBy(item => item)
             .ToList();
 
-        var flatListString = string.Join("\n", flatList.Select(item => $"• {item}"));
+        return string.Join("\n", flatList.Select(item => $"• {item}"));
+    }
 
+    private static string FormatIngredientGroup(IGrouping<string, Ingredient> group)
+    {
+        var amounts = group.Select(i => i.Amount.Trim())
+                           .Where(a => !string.IsNullOrWhiteSpace(a))
+                           .Distinct()
+                           .ToList();
+
+        var name = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(group.Key);
+        var amountText = amounts.Any() ? $" ({string.Join(" + ", amounts)})" : "";
+
+        return $"{name}{amountText}";
+    }
+
+    private async Task<string> CategorizeShoppingListAsync(string flatListString)
+    {
         string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "ShoppingListCategorizer.md");
         string promptTemplate = await File.ReadAllTextAsync(promptPath);
 
@@ -134,29 +160,57 @@ public class MealPlannerService : IMealPlannerService
             .Replace("{flatListString}", flatListString)
             .Replace("{targetLanguage}", _llmSettings.TargetLanguage);
 
-        try
+        var executionSettings = new OpenAIPromptExecutionSettings { Temperature = _llmSettings.Temperature };
+        var rawResponse = await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, executionSettings, _logger, "Список покупок");
+
+        var categorizedList = rawResponse.Trim();
+
+        if (string.IsNullOrWhiteSpace(categorizedList))
+            throw new RecipeScribeException(ErrorType.LlmFailure, "LLM returned an empty response.");
+
+        return categorizedList;
+    }
+
+    private static string FormatCategorizedList(string categorizedList)
+    {
+        var formatted = new StringBuilder();
+
+        foreach (var rawLine in categorizedList.Split('\n'))
         {
-            var executionSettings = new OpenAIPromptExecutionSettings { Temperature = _llmSettings.Temperature };
-            var rawResponse = await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, executionSettings, _logger, "Список покупок");
-            var categorizedList = rawResponse.Trim();
+            var line = rawLine.TrimEnd();
 
-            if (string.IsNullOrWhiteSpace(categorizedList))
-                throw new RecipeScribeException(ErrorType.LlmFailure, "LLM returned an empty response.");
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
 
-            return $"*СПИСОК ПОКУПОК ПО ОТДЕЛАМ:*\n\n{categorizedList}";
+            if (IsDepartmentHeader(line))
+            {
+                formatted.AppendLine();
+                formatted.AppendLine(BoldHeader(line));
+            }
+            else
+            {
+                formatted.AppendLine(line);
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "[Ошибка ИИ при категоризации списка покупок]");
 
-            var listOfIngredients = new StringBuilder();
-            listOfIngredients.AppendLine("*СПИСОК ПОКУПОК (без сортировки по отделам):*");
-            listOfIngredients.AppendLine("=========================");
-            listOfIngredients.AppendLine(flatListString);
-            listOfIngredients.AppendLine();
-            listOfIngredients.AppendLine("*Не удалось распределить по отделам из-за временного сбоя сети.*");
+        return formatted.ToString().Trim();
+    }
 
-            return listOfIngredients.ToString();
-        }
+    private static bool IsDepartmentHeader(string line) =>
+        !line.StartsWith('•') && !line.StartsWith('-') && !line.StartsWith('*');
+
+    private static string BoldHeader(string line) =>
+        line.StartsWith('*') && line.EndsWith('*') ? line : $"*{line.Trim()}*";
+
+    private static string BuildFallbackShoppingList(string flatListString)
+    {
+        var listOfIngredients = new StringBuilder();
+        listOfIngredients.AppendLine("*СПИСОК ПОКУПОК (без сортировки по отделам):*");
+        listOfIngredients.AppendLine("=========================");
+        listOfIngredients.AppendLine(flatListString);
+        listOfIngredients.AppendLine();
+        listOfIngredients.AppendLine("*Не удалось распределить по отделам из-за временного сбоя сети.*");
+
+        return listOfIngredients.ToString();
     }
 }

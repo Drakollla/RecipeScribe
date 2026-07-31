@@ -1,10 +1,9 @@
-﻿namespace Core.Helpers
+﻿namespace Core.Helpers;
+
+public class ViewMetadata
 {
-    public class ViewMetadata
-    {
-        public string Title { get; set; } = string.Empty;
-        public string Description { get; set; } = string.Empty;
-        public string AudioFilePath { get; set; } = string.Empty;
-        public string? CachedTranscript { get; set; }
-    }
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string AudioFilePath { get; set; } = string.Empty;
+    public string? CachedTranscript { get; set; }
 }

@@ -1,7 +1,6 @@
-﻿namespace Core.Contracts
+﻿namespace Core.Contracts;
+
+public interface ITranscriber
 {
-    public interface ITranscriber
-    {
-        Task<string> TranscribeAsync(string audioFilePath, CancellationToken ct = default);
-    }
+    Task<string> TranscribeAsync(string audioFilePath, CancellationToken ct = default);
 }

@@ -1,10 +1,9 @@
-﻿namespace Core.Enums
+﻿namespace Core.Enums;
+
+public enum MealType
 {
-    public enum MealType
-    {
-        Breakfast,
-        Lunch,
-        Dinner,
-        Snack
-    }
+    Breakfast,
+    Lunch,
+    Dinner,
+    Snack
 }

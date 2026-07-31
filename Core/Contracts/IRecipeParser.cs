@@ -1,9 +1,8 @@
 using Core.Models;
 
-namespace Core.Contracts
+namespace Core.Contracts;
+
+public interface IRecipeParser
 {
-    public interface IRecipeParser
-    {
-        Task<Recipe> ParseRecipeAsync(string transcript, CancellationToken ct = default);
-    }
+    Task<List<Recipe>> ParseRecipesAsync(string transcript, CancellationToken ct = default);
 }

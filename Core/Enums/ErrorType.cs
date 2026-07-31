@@ -1,11 +1,10 @@
-namespace Core.Enums
+namespace Core.Enums;
+
+public enum ErrorType
 {
-    public enum ErrorType
-    {
-        Network,
-        VideoNotFound,
-        TranscriptionFailed,
-        LlmFailure,
-        ParseError
-    }
+    Network,
+    VideoNotFound,
+    TranscriptionFailed,
+    LlmFailure,
+    ParseError
 }

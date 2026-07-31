@@ -1,12 +1,13 @@
 using Core.Contracts;
 using Core.Models;
+using Infrastructure.Helpers;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using System.Text.Json;
 
 namespace Infrastructure.Services;
 
-internal class ScalingService : IScalingService
+public class ScalingService : IScalingService
 {
     private readonly Kernel _kernel;
     private readonly ILogger<ScalingService> _logger;
@@ -39,7 +40,7 @@ internal class ScalingService : IScalingService
 
         var result = await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, logPrefix: "Scaling", ct: ct);
 
-        var clean = LlmRetryHelper.StripCodeFence(result);
+        var clean = JsonTextCleaner.StripCodeFence(result);
 
         var scaled = JsonSerializer.Deserialize<List<ScaledIngredient>>(clean, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 

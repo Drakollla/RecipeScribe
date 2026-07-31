@@ -55,7 +55,7 @@ public class ExceptionHandlingMiddleware
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)statusCode;
 
-        var result = JsonSerializer.Serialize(new ErrorDto(errorMessage, ErrorType: errorType));
+        var result = JsonSerializer.Serialize(new ErrorDto(errorMessage, ErrorType: errorType), new JsonSerializerOptions(JsonSerializerDefaults.Web));
         await context.Response.WriteAsync(result);
     }
 }

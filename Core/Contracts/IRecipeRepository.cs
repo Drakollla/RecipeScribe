@@ -1,14 +1,13 @@
 ﻿using Core.Models;
 
-namespace Core.Contracts
+namespace Core.Contracts;
+
+public interface IRecipeRepository
 {
-    public interface IRecipeRepository
-    {
-        Task SaveRecipeAsync(Recipe recipe);
-        Task<List<Recipe>> GetAllRecipesAsync();
-        Task<List<Recipe>> SearchByIngredientsAsync(List<string> searchProducts, int limit = 10);
-        Task<Recipe?> GetRecipeByIdAsync(Guid id);
-        Task<Recipe?> GetRecipeByUrlAsync(string url);
-        Task DeleteRecipeAsync(Guid id);
-    }
+    Task SaveRecipeAsync(Recipe recipe);
+    Task<List<Recipe>> GetAllRecipesAsync();
+    Task<List<Recipe>> SearchByIngredientsAsync(List<string> searchProducts, int limit = 10);
+    Task<Recipe?> GetRecipeByIdAsync(Guid id);
+    Task<List<Recipe>> GetRecipesByUrlAsync(string url);
+    Task DeleteRecipeAsync(Guid id);
 }

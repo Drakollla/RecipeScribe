@@ -1,11 +1,10 @@
 ﻿using Core.Models;
 
-namespace Core.Contracts
+namespace Core.Contracts;
+
+public interface IRecipeExtractorService
 {
-    public interface IRecipeExtractorService
-    {
-        Task<Recipe?> ExtractAndSaveRecipeAsync(string url,
-            Func<string, Task>? onProgress = null,
-            CancellationToken cancellationToken = default);
-    }
+    Task<List<Recipe>> ExtractAndSaveRecipeAsync(string url,
+        Func<string, Task>? onProgress = null,
+        CancellationToken cancellationToken = default);
 }

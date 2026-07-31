@@ -1152,11 +1152,32 @@
                     body: JSON.stringify({ url: value })
                 });
                 if (!r.ok) throw new Error((await r.json()).error || 'Не удалось обработать видео');
-                const recipe = await r.json();
+                const recipes = await r.json();
                 hideLoading();
-                activeRecipeId = recipe.id;
-                enableRecalcBtn();
-                renderResults(renderRecipeHtml(recipe));
+                if (Array.isArray(recipes)) {
+                    if (recipes.length === 1) {
+                        const recipe = recipes[0];
+                        activeRecipeId = recipe.id;
+                        enableRecalcBtn();
+                        renderResults(renderRecipeHtml(recipe));
+                    } else if (recipes.length > 1) {
+                        let html = '<h2>Найдено рецептов: ' + recipes.length + '</h2><div class="recipe-list">';
+                        recipes.forEach(r => {
+                            html += '<div class="recipe-item" onclick="showRecipe(\'' + r.id + '\')">' +
+                                    '<span class="recipe-item-title">' + r.title + '</span>' +
+                                    '<span>➔</span></div>';
+                        });
+                        html += '</div>';
+                        renderResults(html);
+                    } else {
+                        renderResults('<h2>Ошибка</h2><p>Не удалось извлечь рецепт.</p>');
+                    }
+                } else {
+                    // fallback: single object (backward compat)
+                    activeRecipeId = recipes.id;
+                    enableRecalcBtn();
+                    renderResults(renderRecipeHtml(recipes));
+                }
             } catch(e) {
                 hideLoading();
                 renderResults(`<h2>Ошибка</h2><p>${e.message}</p>`);

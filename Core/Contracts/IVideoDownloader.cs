@@ -1,10 +1,9 @@
 ﻿using Core.Helpers;
 
-namespace Core.Contracts
+namespace Core.Contracts;
+
+public interface IVideoDownloader
 {
-    public interface IVideoDownloader
-    {
-        Task<ViewMetadata> DownloadAudioAsync(string videoUrl, CancellationToken ct = default);
-        Task<string?> GetFirstCommentAsync(string videoUrl, CancellationToken ct = default);
-    }
+    Task<ViewMetadata> DownloadAudioAsync(string videoUrl, CancellationToken ct = default);
+    Task<string?> GetFirstCommentAsync(string videoUrl, CancellationToken ct = default);
 }
