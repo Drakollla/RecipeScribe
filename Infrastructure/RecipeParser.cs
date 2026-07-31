@@ -11,161 +11,193 @@ using Microsoft.SemanticKernel.Connectors.OpenAI;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace Infrastructure
+namespace Infrastructure;
+
+public class RecipeParser : IRecipeParser
 {
-    public class RecipeParser : IRecipeParser
+    private readonly Kernel _kernel;
+    private readonly LlmSettings _llmSettings;
+    private readonly ILogger<RecipeParser> _logger;
+
+    public RecipeParser(Kernel kernel, LlmSettings llmSettings, ILogger<RecipeParser> logger)
     {
-        private readonly Kernel _kernel;
-        private readonly LlmSettings _llmSettings;
-        private readonly ILogger<RecipeParser> _logger;
-
-        public RecipeParser(Kernel kernel, LlmSettings llmSettings, ILogger<RecipeParser> logger)
-        {
-            _kernel = kernel;
-            _llmSettings = llmSettings;
-            _logger = logger;
-        }
-
-        public async Task<List<Recipe>> ParseRecipesAsync(string transcript, CancellationToken ct = default)
-        {
-            string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "RecipeParser.md");
-            string promptTemplate = await File.ReadAllTextAsync(promptPath);
-
-            string fullPrompt = promptTemplate
-                .Replace("{transcript}", transcript)
-                .Replace("{language}", _llmSettings.TargetLanguage);
-
-            _logger.LogDebug("Текст, отправленный в ИИ:\n{Transcript}", transcript);
-
-            string responseText;
-            try
-            {
-                var settings = new OpenAIPromptExecutionSettings();
-                responseText = await LlmRetryHelper.CallWithRetryAsync(_kernel, fullPrompt, settings, ct: ct);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                throw new RecipeScribeException(ErrorType.LlmFailure,
-                    "Error calling LLM", ex);
-            }
-
-            _logger.LogDebug("Сырой ответ от ИИ:\n{Response}", responseText);
-
-            responseText = JsonTextCleaner.StripCodeFence(responseText);
-
-            responseText = Regex.Replace(responseText, @"\}(\s*)\{", @"},$1{");
-
-            string? TryParse(string s)
-            {
-                try { using var _ = JsonDocument.Parse(s); return null; }
-                catch (JsonException e) { return e.Message; }
-            }
-
-            var parseError = TryParse(responseText);
-            if (parseError != null && !responseText.StartsWith("["))
-            {
-                responseText = "[" + responseText + "]";
-                parseError = TryParse(responseText);
-            }
-
-            if (parseError != null && responseText.StartsWith("["))
-            {
-                responseText = JsonTextCleaner.TruncateToLastCompleteObject(responseText);
-                parseError = responseText != null ? TryParse(responseText) : "empty";
-            }
-
-            if (parseError != null)
-                throw new RecipeScribeException(ErrorType.ParseError,
-                    $"LLM returned invalid JSON: {parseError}");
-
-            using var doc = JsonDocument.Parse(responseText);
-            var root = doc.RootElement;
-
-            var recipes = new List<Recipe>();
-
-            if (root.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var element in root.EnumerateArray())
-                    recipes.Add(ParseSingleRecipe(element));
-            }
-            else
-            {
-                recipes.Add(ParseSingleRecipe(root));
-            }
-
-            return recipes;
-        }
-
-        private static Recipe ParseSingleRecipe(JsonElement root)
-        {
-            var recipe = new Recipe
-            {
-                Title = GetProp(root, "Title", "Название")?.GetString() ?? "Неизвестный рецепт",
-                Servings = TryGetInt(GetProp(root, "Servings", "Порций")) ?? 2,
-                IsBreakfast = GetBool(GetProp(root, "IsBreakfast", "ДляЗавтрака")),
-                IsLunch = GetBool(GetProp(root, "IsLunch", "ДляОбеда")),
-                IsDinner = GetBool(GetProp(root, "IsDinner", "ДляУжина")),
-                IsSnack = GetBool(GetProp(root, "IsSnack", "ДляПерекуса")),
-            };
-
-            var tipsProp = GetProp(root, "PreparationTips", "СоветыПоПодготовке");
-            if (tipsProp.HasValue && tipsProp.Value.ValueKind == JsonValueKind.Array)
-                recipe.PreparationTips = tipsProp.Value.GetRawText();
-
-            var nutritionProp = GetProp(root, "Nutrition", "ПитательнаяЦенность");
-            if (nutritionProp.HasValue && nutritionProp.Value.ValueKind == JsonValueKind.Object)
-                recipe.NutritionJson = nutritionProp.Value.GetRawText();
-
-            var ingredientsProp = GetProp(root, "Ingredients", "Ингредиенты");
-            if (ingredientsProp.HasValue && ingredientsProp.Value.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in ingredientsProp.Value.EnumerateArray())
-                {
-                    recipe.Ingredients.Add(new Ingredient
-                    {
-                        Name = GetProp(item, "Name", "НазваниеИнгредиента", "Ингредиент")?.GetString() ?? string.Empty,
-                        Amount = GetProp(item, "Amount", "Количество")?.GetString() ?? string.Empty
-                    });
-                }
-            }
-
-            var stepsProp = GetProp(root, "Steps", "Шаги");
-            if (stepsProp.HasValue && stepsProp.Value.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in stepsProp.Value.EnumerateArray())
-                {
-                    recipe.Steps.Add(new RecipeStep
-                    {
-                        Number = item.TryGetProperty("Number", out var num) ? num.GetInt32()
-                            : item.TryGetProperty("Номер", out var numRu) ? numRu.GetInt32() : 0,
-                        Description = GetProp(item, "Description", "Описание")?.GetString() ?? string.Empty
-                    });
-                }
-            }
-
-            return recipe;
-        }
-
-        private static JsonElement? GetProp(JsonElement element, params string[] names)
-        {
-            foreach (var name in names)
-                if (element.TryGetProperty(name, out var value))
-                    return value;
-            return null;
-        }
-
-        private static int? TryGetInt(JsonElement? element)
-        {
-            if (element.HasValue && element.Value.TryGetInt32(out var val))
-                return val;
-            return null;
-        }
-
-        private static bool GetBool(JsonElement? element) =>
-            element.HasValue && element.Value.GetBoolean();
+        _kernel = kernel;
+        _llmSettings = llmSettings;
+        _logger = logger;
     }
+
+    public async Task<List<Recipe>> ParseRecipesAsync(string transcript, CancellationToken ct = default)
+    {
+        _logger.LogDebug("Текст, отправленный в ИИ:\n{Transcript}", transcript);
+
+        string fullPrompt = await BuildPromptAsync(transcript);
+        string responseText = await CallLlmAsync(fullPrompt, ct);
+
+        _logger.LogDebug("Сырой ответ от ИИ:\n{Response}", responseText);
+
+        string validJson = RecoverJson(responseText);
+
+        using var doc = JsonDocument.Parse(validJson);
+        var root = doc.RootElement;
+
+        return root.ValueKind == JsonValueKind.Array
+            ? root.EnumerateArray().Select(ParseSingleRecipe).ToList()
+            : new List<Recipe> { ParseSingleRecipe(root) };
+    }
+
+    private async Task<string> BuildPromptAsync(string transcript)
+    {
+        string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "RecipeParser.md");
+        string promptTemplate = await File.ReadAllTextAsync(promptPath);
+
+        return promptTemplate
+            .Replace("{transcript}", transcript)
+            .Replace("{language}", _llmSettings.TargetLanguage);
+    }
+
+    private async Task<string> CallLlmAsync(string prompt, CancellationToken ct)
+    {
+        try
+        {
+            var settings = new OpenAIPromptExecutionSettings();
+            return await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, settings, ct: ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new RecipeScribeException(ErrorType.LlmFailure,
+                "Error calling LLM", ex);
+        }
+    }
+
+    private static string RecoverJson(string raw)
+    {
+        var text = JsonTextCleaner.StripCodeFence(raw);
+        text = Regex.Replace(text, @"\}(\s*)\{", @"},$1{");
+
+        var parseError = TryParseJson(text);
+
+        if (parseError != null && !text.StartsWith("["))
+        {
+            text = "[" + text + "]";
+            parseError = TryParseJson(text);
+        }
+
+        if (parseError != null && text.StartsWith("["))
+        {
+            var truncated = JsonTextCleaner.TruncateToLastCompleteObject(text);
+            if (truncated == null)
+                throw new RecipeScribeException(ErrorType.ParseError, "LLM returned invalid JSON: empty");
+
+            text = truncated;
+            parseError = TryParseJson(text);
+        }
+
+        if (parseError != null)
+            throw new RecipeScribeException(ErrorType.ParseError,
+                $"LLM returned invalid JSON: {parseError}");
+
+        return text;
+    }
+
+    private static string? TryParseJson(string s)
+    {
+        try { using var _ = JsonDocument.Parse(s); return null; }
+        catch (JsonException e) { return e.Message; }
+    }
+
+    private static Recipe ParseSingleRecipe(JsonElement root)
+    {
+        var recipe = new Recipe
+        {
+            Title = GetProp(root, "Title", "Название")?.GetString() ?? "Неизвестный рецепт",
+            Servings = TryGetInt(GetProp(root, "Servings", "Порций")) ?? 2,
+            IsBreakfast = GetBool(GetProp(root, "IsBreakfast", "ДляЗавтрака")),
+            IsLunch = GetBool(GetProp(root, "IsLunch", "ДляОбеда")),
+            IsDinner = GetBool(GetProp(root, "IsDinner", "ДляУжина")),
+            IsSnack = GetBool(GetProp(root, "IsSnack", "ДляПерекуса")),
+        };
+
+        recipe.PreparationTips = GetRawTextOfKind(root, JsonValueKind.Array, "PreparationTips", "СоветыПоПодготовке");
+        recipe.NutritionJson = GetRawTextOfKind(root, JsonValueKind.Object, "Nutrition", "ПитательнаяЦенность");
+        recipe.Ingredients.AddRange(ParseIngredients(GetArray(root, "Ingredients", "Ингредиенты")));
+        recipe.Steps.AddRange(ParseSteps(GetArray(root, "Steps", "Шаги")));
+
+        return recipe;
+    }
+
+    private static List<Ingredient> ParseIngredients(JsonElement? prop)
+    {
+        var ingredients = new List<Ingredient>();
+        
+        if (prop == null) 
+            return ingredients;
+
+        foreach (var item in prop.Value.EnumerateArray())
+        {
+            ingredients.Add(new Ingredient
+            {
+                Name = GetProp(item, "Name", "НазваниеИнгредиента", "Ингредиент")?.GetString() ?? string.Empty,
+                Amount = GetProp(item, "Amount", "Количество")?.GetString() ?? string.Empty
+            });
+        }
+
+        return ingredients;
+    }
+
+    private static List<RecipeStep> ParseSteps(JsonElement? prop)
+    {
+        var steps = new List<RecipeStep>();
+        
+        if (prop == null) 
+            return steps;
+
+        foreach (var item in prop.Value.EnumerateArray())
+        {
+            steps.Add(new RecipeStep
+            {
+                Number = GetStepNumber(item),
+                Description = GetProp(item, "Description", "Описание")?.GetString() ?? string.Empty
+            });
+        }
+
+        return steps;
+    }
+
+    private static int GetStepNumber(JsonElement item) =>
+        item.TryGetProperty("Number", out var num) ? num.GetInt32()
+        : item.TryGetProperty("Номер", out var numRu) ? numRu.GetInt32() : 0;
+
+    private static JsonElement? GetArray(JsonElement element, params string[] names)
+    {
+        var prop = GetProp(element, names);
+        return prop.HasValue && prop.Value.ValueKind == JsonValueKind.Array ? prop : null;
+    }
+
+    private static string? GetRawTextOfKind(JsonElement element, JsonValueKind kind, params string[] names)
+    {
+        var prop = GetProp(element, names);
+        return prop.HasValue && prop.Value.ValueKind == kind ? prop.Value.GetRawText() : null;
+    }
+
+    private static JsonElement? GetProp(JsonElement element, params string[] names)
+    {
+        foreach (var name in names)
+            if (element.TryGetProperty(name, out var value))
+                return value;
+        return null;
+    }
+
+    private static int? TryGetInt(JsonElement? element)
+    {
+        if (element.HasValue && element.Value.TryGetInt32(out var val))
+            return val;
+        return null;
+    }
+
+    private static bool GetBool(JsonElement? element) =>
+        element.HasValue && element.Value.GetBoolean();
 }

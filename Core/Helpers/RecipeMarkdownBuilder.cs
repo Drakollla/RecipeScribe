@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Core.Models;
+using Core.ValueObjects;
 
 namespace Core.Helpers;
 
@@ -11,36 +12,46 @@ public static class RecipeMarkdownBuilder
         var sb = new StringBuilder();
 
         sb.AppendLine($"# {recipe.Title}");
+
+        AppendIngredients(sb, recipe.Ingredients);
+        AppendNutritionTable(sb, Nutrition.Deserialize(recipe.NutritionJson));
+        AppendTips(sb, DeserializeTips(recipe.PreparationTips));
+        AppendSteps(sb, recipe.Steps);
+
+        return sb.ToString();
+    }
+
+    private static void AppendIngredients(StringBuilder sb, IEnumerable<Ingredient> ingredients)
+    {
         sb.AppendLine();
         sb.AppendLine("### Ингредиенты:");
 
-        foreach (var ing in recipe.Ingredients)
+        foreach (var ing in ingredients)
         {
             var amount = string.IsNullOrWhiteSpace(ing.Amount) ? "" : $" — {ing.Amount}";
             sb.AppendLine($"- {ing.Name}{amount}");
         }
+    }
 
-        var nutrition = Nutrition.Deserialize(recipe.NutritionJson);
-        AppendNutritionTable(sb, nutrition);
+    private static void AppendTips(StringBuilder sb, List<PreparationTip>? tips)
+    {
+        if (tips is not { Count: > 0 })
+            return;
 
-        var tips = DeserializeTips(recipe.PreparationTips);
+        sb.AppendLine();
+        sb.AppendLine("### Советы по подготовке:");
 
-        if (tips is { Count: > 0 })
-        {
-            sb.AppendLine();
-            sb.AppendLine("### Советы по подготовке:");
+        foreach (var tip in tips)
+            sb.AppendLine($"- **{tip.Ingredient}:** {tip.Tip}");
+    }
 
-            foreach (var tip in tips)
-                sb.AppendLine($"- **{tip.Ingredient}:** {tip.Tip}");
-        }
-
+    private static void AppendSteps(StringBuilder sb, IEnumerable<RecipeStep> steps)
+    {
         sb.AppendLine();
         sb.AppendLine("### Шаги приготовления:");
 
-        foreach (var step in recipe.Steps.OrderBy(s => s.Number))
+        foreach (var step in steps.OrderBy(s => s.Number))
             sb.AppendLine($"{step.Number}. {step.Description}");
-
-        return sb.ToString();
     }
 
     private static List<PreparationTip>? DeserializeTips(string? json)
@@ -63,63 +74,58 @@ public static class RecipeMarkdownBuilder
         if (nutrition?.PerServing == null && nutrition?.Per100g == null && nutrition?.Total == null)
             return;
 
+        var columns = new List<NutritionColumn>();
+
+        if (nutrition.PerServing != null)
+            columns.Add(new("На порцию", nutrition.PerServing));
+
+        if (nutrition.Per100g != null)
+            columns.Add(new("На 100 г", nutrition.Per100g));
+        
+        if (nutrition.Total != null) 
+            columns.Add(new("Всё блюдо", nutrition.Total));
+
         var rows = new[]
         {
-            ("Калории", "ккал", nutrition.PerServing?.Calories, nutrition.Per100g?.Calories, nutrition.Total?.Calories),
-            ("Белки", "г", nutrition.PerServing?.Protein, nutrition.Per100g?.Protein, nutrition.Total?.Protein),
-            ("Жиры", "г", nutrition.PerServing?.Fat, nutrition.Per100g?.Fat, nutrition.Total?.Fat),
-            ("Углеводы", "г", nutrition.PerServing?.Carbs, nutrition.Per100g?.Carbs, nutrition.Total?.Carbs),
-            ("Клетчатка", "г", nutrition.PerServing?.Fiber, nutrition.Per100g?.Fiber, nutrition.Total?.Fiber),
+            ("Калории", "ккал", (Func<NutritionValues, double?>)(v => v.Calories)),
+            ("Белки", "г", v => v.Protein),
+            ("Жиры", "г", v => v.Fat),
+            ("Углеводы", "г", v => v.Carbs),
+            ("Клетчатка", "г", v => v.Fiber),
         };
-
-        bool hasPerServing = nutrition.PerServing != null;
-        bool hasPer100g = nutrition.Per100g != null;
-        bool hasTotal = nutrition.Total != null;
 
         sb.AppendLine();
         sb.AppendLine("### Пищевая ценность");
-
         sb.Append("| |");
         
-        if (hasPerServing)
-            sb.Append(" На порцию |");
+        foreach (var column in columns)
+            sb.Append($" {column.Header} |");
         
-        if (hasPer100g)
-            sb.Append(" На 100 г |");
-        
-        if (hasTotal)
-            sb.Append(" Всё блюдо |");
-
         sb.AppendLine();
+
         sb.Append("|---|");
         
-        if (hasPerServing)
+        foreach (var _ in columns)
             sb.Append("---|");
         
-        if (hasPer100g)
-            sb.Append("---|");
-        
-        if (hasTotal)
-            sb.Append("---|");
         sb.AppendLine();
 
-        foreach (var (label, unit, perS, per100, total) in rows)
+        foreach (var (label, unit, select) in rows)
         {
-            if (perS == null && per100 == null && total == null)
+            if (columns.All(c => select(c.Values) == null))
                 continue;
 
             sb.Append($"| **{label}** |");
-            
-            if (hasPerServing) 
-                sb.Append($" {perS?.ToString("F1") ?? "—"} {unit} |");
-            
-            if (hasPer100g)
-                sb.Append($" {per100?.ToString("F1") ?? "—"} {unit} |");
-            
-            if (hasTotal)
-                sb.Append($" {total?.ToString("F1") ?? "—"} {unit} |");
-            
+
+            foreach (var column in columns)
+            {
+                var value = select(column.Values);
+                sb.Append($" {value?.ToString("F1") ?? "—"} {unit} |");
+            }
+
             sb.AppendLine();
         }
     }
+
+    private sealed record NutritionColumn(string Header, NutritionValues Values);
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Core.Models;
+using Core.ValueObjects;
 using Shared.DTOs;
 
 namespace RecipeScribeApi.Mapping;
@@ -20,7 +21,7 @@ public static class RecipeMapping
             catch (JsonException) { }
         }
 
-        var nutrition = MapNutrition(Core.Models.Nutrition.Deserialize(recipe.NutritionJson));
+        var nutrition = MapNutrition(Nutrition.Deserialize(recipe.NutritionJson));
 
         return new RecipeDto(
             recipe.Id,
@@ -40,7 +41,8 @@ public static class RecipeMapping
 
     private static NutritionDto? MapNutrition(Nutrition? nutrition)
     {
-        if (nutrition == null) return null;
+        if (nutrition == null)
+            return null;
 
         return new NutritionDto(
             MapValues(nutrition.PerServing),

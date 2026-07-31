@@ -1,5 +1,5 @@
-﻿namespace Core.Models
-{
+﻿namespace Core.Models;
+
 public class Recipe
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -15,5 +15,4 @@ public class Recipe
     public DateTime? LastPlannedAt { get; set; }
     public List<Ingredient> Ingredients { get; set; } = new();
     public List<RecipeStep> Steps { get; set; } = new();
-}
 }

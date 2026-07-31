@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Core.Models;
+namespace Core.ValueObjects;
 
 public class Nutrition
 {

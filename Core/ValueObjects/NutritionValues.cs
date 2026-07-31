@@ -1,4 +1,4 @@
-namespace Core.Models;
+namespace Core.ValueObjects;
 
 public class NutritionValues
 {

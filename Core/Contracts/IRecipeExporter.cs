@@ -1,11 +1,10 @@
 ﻿using Core.Models;
 
-namespace Core.Contracts
-{
-    public interface IRecipeExporter
-    {
-        string Format { get; }
+namespace Core.Contracts;
 
-        Task ExportAsync(Recipe recipe, string outputPath);
-    }
+public interface IRecipeExporter
+{
+    string Format { get; }
+
+    Task ExportAsync(Recipe recipe, string outputPath);
 }

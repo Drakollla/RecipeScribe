@@ -1,14 +1,13 @@
-﻿namespace Core.Enums
+﻿namespace Core.Enums;
+
+public enum BotState
 {
-    public enum BotState
-    {
-        None,
-        WaitingForCustomDate,
-        WaitingForAiPreferences,
-        WaitingForSearchIngredients,
-        WaitingForSubstituteIngredient,
-        WaitingForSubstituteRecipe,
-        WaitingForServings,
-        WaitingForSettings
-    }
+    None,
+    WaitingForCustomDate,
+    WaitingForAiPreferences,
+    WaitingForSearchIngredients,
+    WaitingForSubstituteIngredient,
+    WaitingForSubstituteRecipe,
+    WaitingForServings,
+    WaitingForSettings
 }

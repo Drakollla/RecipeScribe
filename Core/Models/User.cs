@@ -1,5 +1,5 @@
-﻿namespace Core.Models
-{
+﻿namespace Core.Models;
+
 public class User
 {
     public Guid Id { get; set; }
@@ -9,5 +9,4 @@ public class User
     public string? ObsidianVaultPath { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public List<MealPlan> MealPlans { get; set; } = new();
-}
 }

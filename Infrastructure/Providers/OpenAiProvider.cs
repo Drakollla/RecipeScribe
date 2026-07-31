@@ -3,30 +3,29 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 
-namespace Infrastructure.Providers
+namespace Infrastructure.Providers;
+
+public class OpenAiProvider : ILLMProvider
 {
-    public class OpenAiProvider : ILLMProvider
+    public string Name => "OpenAI";
+
+    public void Register(IServiceCollection services, IConfiguration config)
     {
-        public string Name => "OpenAI";
+        var llmSettings = config.GetSection("LlmSettings").Get<LlmSettings>() ?? new LlmSettings();
+        var apiKey = config["ApiKeys:Llm"] ?? "ollama";
 
-        public void Register(IServiceCollection services, IConfiguration config)
+        var handler = new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(10) };
+        var httpClient = new HttpClient(handler)
         {
-            var llmSettings = config.GetSection("LlmSettings").Get<LlmSettings>() ?? new LlmSettings();
-            var apiKey = config["ApiKeys:Llm"] ?? "ollama";
+            BaseAddress = new Uri(llmSettings.Endpoint),
+            Timeout = TimeSpan.FromMinutes(5)
+        };
 
-            var handler = new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(10) };
-            var httpClient = new HttpClient(handler)
-            {
-                BaseAddress = new Uri(llmSettings.Endpoint),
-                Timeout = TimeSpan.FromMinutes(5)
-            };
-
-            services.AddKernel()
-                .AddOpenAIChatCompletion(
-                    modelId: llmSettings.ModelId,
-                    apiKey: apiKey,
-                    httpClient: httpClient
-                );
-        }
+        services.AddKernel()
+            .AddOpenAIChatCompletion(
+                modelId: llmSettings.ModelId,
+                apiKey: apiKey,
+                httpClient: httpClient
+            );
     }
 }
