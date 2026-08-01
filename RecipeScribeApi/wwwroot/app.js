@@ -798,11 +798,13 @@
         // Список покупок
         async function showShoppingList(planId) {
             showLoading();
+            setMenuLocked(true);
             try {
                 const r = await fetch(`/api/mealplans/${planId}/shopping-list`);
                 if (!r.ok) throw new Error('Не удалось загрузить список покупок');
                 const text = await r.text();
                 hideLoading();
+                setMenuLocked(false);
 
                 // Конвертируем markdown в HTML (звёздочки → жирный, • → маркеры)
                 var html = text
@@ -819,8 +821,17 @@
                 `);
             } catch (e) {
                 hideLoading();
+                setMenuLocked(false);
                 alert('Ошибка: ' + e.message);
             }
+        }
+
+        // Блокировка изменения карточек меню, пока собирается список покупок
+        function setMenuLocked(locked) {
+            document.querySelectorAll('.meal-card').forEach(function (card) {
+                if (locked) card.classList.add('is-busy');
+                else card.classList.remove('is-busy');
+            });
         }
 
         // Перегенерация меню (запрос нового плана)
