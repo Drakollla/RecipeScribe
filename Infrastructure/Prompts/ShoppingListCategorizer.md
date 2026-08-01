@@ -1,5 +1,5 @@
 Organize the grocery list provided below into logical supermarket departments.
-- Translate all category names into {targetLanguage} (e.g. "*Молоко и яйца*", "*Мясо и рыба*", "*Овощи и фрукты*", "*Бакалея и специи*", "*Хлеб и выпечка*", "*Замороженное*", "*Напитки и соки*", "*Соусы*").
+- Translate all category names into {targetLanguage} (e.g. "*Молоко и яйца*", "*Мясо и рыба*", "*Овощи и фрукты*", "*Бакалея*", "*Специи и приправы*", "*Хлеб и выпечка*", "*Замороженное*", "*Напитки и соки*", "*Соусы*"). Groceries (flour, pasta, canned goods) and spices/seasonings (salt, pepper, herbs) are separate categories.
 - Format the output as a clean bullet-point list (•) under each category header.
 
 - MERGE near-duplicate items that describe the same single product the shopper should buy once:
