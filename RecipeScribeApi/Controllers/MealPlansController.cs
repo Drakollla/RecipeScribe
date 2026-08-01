@@ -1,5 +1,7 @@
 using Core.Contracts;
 using Core.Exceptions;
+using Core.Models;
+using Core.ValueObjects;
 using Microsoft.AspNetCore.Mvc;
 using RecipeScribeApi.Mapping;
 using Shared.DTOs;
@@ -44,6 +46,18 @@ public class MealPlansController : ControllerBase
         var plan = await _mealPlanner.GenerateAutoPlanAsync(chatId, targetDate.Value, dto.Preferences ?? "");
 
         return CreatedAtAction(nameof(GetPlan), new { chatId, date = plan.Date.ToString("yyyy-MM-dd") }, plan.ToDto());
+    }
+
+    [HttpPatch("items/{itemId:guid}")]
+    public async Task<IActionResult> UpdateItemPortions(Guid itemId, [FromBody] UpdateMealPlanItemDto dto)
+    {
+        var ingredientsJson = dto.Ingredients == null
+            ? null
+            : PlanItemIngredients.Serialize(dto.Ingredients.Select(i => new Ingredient { Name = i.Name, Amount = i.Amount }));
+
+        var item = await _mealPlanner.UpdatePlanItemPortionsAsync(itemId, dto.Portions, ingredientsJson);
+
+        return Ok(item.ToDto());
     }
 
     [HttpGet("{id:guid}/shopping-list")]

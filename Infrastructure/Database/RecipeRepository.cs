@@ -22,6 +22,7 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
     public async Task<List<Recipe>> GetAllRecipesAsync()
     {
         return await FindAll(trackChanges: false)
+            .AsSplitQuery()
             .Include(r => r.Ingredients)
             .Include(r => r.Steps)
             .ToListAsync();
@@ -48,6 +49,7 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
 
         var recipes = await Context.Recipes
             .Where(r => matchedIds.Contains(r.Id))
+            .AsSplitQuery()
             .Include(r => r.Ingredients)
             .Include(r => r.Steps)
             .ToListAsync();
@@ -63,6 +65,7 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
     public async Task<Recipe?> GetRecipeByIdAsync(Guid id)
     {
         return await Context.Recipes
+            .AsSplitQuery()
             .Include(r => r.Ingredients)
             .Include(r => r.Steps)
             .FirstOrDefaultAsync(r => r.Id == id);
@@ -76,6 +79,7 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
         string targetUrl = url.Trim();
 
         return await Context.Recipes
+            .AsSplitQuery()
             .Include(r => r.Ingredients)
             .Include(r => r.Steps)
             .Where(r => r.VideoUrl == targetUrl)
