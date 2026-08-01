@@ -1,0 +1,958 @@
+        :root {
+            --bg-color: #0F0D0C;
+            --card-bg: #1A1614;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --accent-color: #E65F2B;
+            --accent-hover: #F2723F;
+            --accent-dim: rgba(230, 95, 43, 0.15);
+            --accent-glass: rgba(230, 95, 43, 0.08);
+            --text-main: #E5E1DF;
+            --text-muted: #8C837E;
+            --radius: 16px;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            background: linear-gradient(145deg, #0c0a09, #1c1410);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 760px;
+            padding: 40px 20px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        .header {
+            margin-bottom: 32px;
+        }
+
+        .logo {
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 8px;
+            color: var(--text-main);
+        }
+
+            .logo span {
+                color: var(--accent-color);
+            }
+
+        .subtitle {
+            font-size: 15px;
+            color: var(--text-muted);
+            margin: 0;
+        }
+
+        /* Режимы работы (Вкладки) */
+        .modes-container {
+            display: inline-flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            background-color: #151110;
+            padding: 4px;
+            border-radius: 14px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 20px;
+            gap: 2px;
+        }
+
+        .mode-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            padding: 10px 16px;
+            font-size: 13.5px;
+            font-weight: 500;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+            .mode-btn:hover {
+                color: var(--text-main);
+            }
+
+            .mode-btn.active {
+                background-color: var(--card-bg);
+                color: var(--text-main);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+                border: 1px solid rgba(255, 255, 255, 0.04);
+            }
+
+        /* Единая умная панель ввода */
+        .command-bar {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 18px;
+            padding: 8px 8px 8px 18px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            transition: border-color 0.2s ease;
+        }
+
+            .command-bar:focus-within {
+                border-color: rgba(230, 95, 43, 0.4);
+            }
+
+        .input-icon {
+            font-size: 18px;
+            color: var(--text-muted);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .main-input {
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--text-main);
+            font-size: 15px;
+            width: 100%;
+            padding: 8px 0;
+        }
+
+            .main-input::placeholder {
+                color: var(--text-muted);
+            }
+
+        /* Кнопка очистки поля ввода */
+        .clear-input-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px 8px;
+            flex-shrink: 0;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+            opacity: 0.3;
+            transition: opacity 0.15s;
+        }
+
+            .clear-input-btn:hover {
+                opacity: 1;
+                color: var(--text-main);
+            }
+
+        /* Универсальные кнопки порций */
+        .portion-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 13px;
+            font-weight: bold;
+            border-radius: 4px;
+            transition: all 0.15s ease;
+        }
+
+            .portion-btn:hover {
+                background-color: rgba(255, 255, 255, 0.08);
+                color: var(--text-main);
+            }
+
+        /* Кнопка действия */
+        .submit-btn {
+            background-color: var(--accent-color);
+            border: none;
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            flex-shrink: 0;
+        }
+
+            .submit-btn:hover {
+                background-color: var(--accent-hover);
+            }
+
+            .submit-btn svg {
+                fill: #fff;
+                width: 16px;
+                height: 16px;
+            }
+
+        /* Сноска настроек */
+        .hint-text {
+            margin-top: 14px;
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+        }
+
+            .hint-text > span {
+                display: inline-block;
+                background-color: rgba(255,255,255,0.05);
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-family: monospace;
+            }
+
+        /* Форма настроек */
+        .settings-form {
+            max-width: 480px;
+            margin: 20px auto;
+        }
+
+            .settings-form label {
+                display: block;
+                margin: 16px 0 6px;
+                color: var(--text-muted);
+                font-size: 13px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+
+            .settings-form input {
+                width: 100%;
+                padding: 10px 14px;
+                border: 1px solid var(--border-color);
+                border-radius: 10px;
+                background: var(--card-bg);
+                color: var(--text-main);
+                font-size: 15px;
+                outline: none;
+                box-sizing: border-box;
+            }
+
+                .settings-form input:focus {
+                    border-color: var(--accent-color);
+                }
+
+                .settings-form input[type="text"] {
+                    width: 100%;
+                    box-sizing: border-box;
+                }
+
+            .settings-form .save-btn {
+                margin-top: 24px;
+                padding: 10px 28px;
+                border: none;
+                border-radius: 10px;
+                background: var(--accent-color);
+                color: #fff;
+                font-size: 15px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: opacity 0.2s;
+            }
+
+                .settings-form .save-btn:hover {
+                    opacity: 0.85;
+                }
+
+            .settings-form .success-msg {
+                color: #4caf50;
+                margin-top: 12px;
+                font-size: 14px;
+            }
+
+        /* Контейнер результатов */
+        .results-container {
+            margin-top: 24px;
+            text-align: left;
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 28px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Компоненты оформления результатов */
+        .results-container h2 {
+            font-size: 20px;
+            font-weight: 700;
+            margin: 0 0 16px 0;
+            color: var(--text-main);
+        }
+
+        .results-container h3 {
+            font-size: 13.5px;
+            font-weight: 600;
+            margin: 20px 0 10px 0;
+            color: var(--accent-hover);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+            .results-container h3:first-of-type {
+                margin-top: 0;
+            }
+
+        .results-container ul, .results-container ol {
+            margin: 8px 0;
+            padding-left: 20px;
+            line-height: 1.6;
+        }
+
+        .results-container li {
+            margin: 6px 0;
+            color: var(--text-main);
+        }
+
+        .results-container strong {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        /* Элементы списка рецептов */
+        .recipe-list {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .recipe-item {
+            padding: 14px 18px;
+            background-color: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+            .recipe-item:hover {
+                border-color: var(--accent-color);
+                background-color: rgba(230, 95, 43, 0.04);
+            }
+
+        .recipe-item-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        /* Сетка КБЖУ */
+        .nutrition-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .nutrition-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px;
+            text-align: center;
+        }
+
+            .nutrition-item .value {
+                font-size: 18px;
+                font-weight: 700;
+                color: var(--accent-hover);
+            }
+
+            .nutrition-item .label {
+                font-size: 11px;
+                color: var(--text-muted);
+                margin-top: 2px;
+            }
+
+        /* Таблица пищевой ценности */
+        .nutrition-table {
+            display: table;
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 13.5px;
+        }
+
+        .nt-row {
+            display: table-row;
+        }
+
+            .nt-row span {
+                display: table-cell;
+                padding: 6px 12px;
+                border-bottom: 1px solid var(--border-color);
+            }
+
+        .nt-header span {
+            font-weight: 600;
+            color: var(--accent-hover);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Кнопки действия внутри результатов */
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        .action-btn {
+            background-color: var(--accent-color);
+            border: none;
+            color: #fff;
+            padding: 10px 18px;
+            font-size: 13.5px;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+            .action-btn:hover {
+                background-color: var(--accent-hover);
+            }
+
+            .action-btn.secondary {
+                background-color: rgba(255, 255, 255, 0.04);
+                border: 1px solid var(--border-color);
+                color: var(--text-main);
+            }
+
+                .action-btn.secondary:hover {
+                    background-color: rgba(255, 255, 255, 0.08);
+                }
+
+        /* Меню плана питания */
+        .meal-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 12px 14px;
+            margin-bottom: 12px;
+        }
+
+        .meal-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .meal-type {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--accent-hover);
+            min-width: 80px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .meal-recipe-btn {
+            color: var(--text-main);
+            font-weight: 500;
+            cursor: pointer;
+            transition: color 0.15s;
+            flex: 1;
+        }
+
+            .meal-recipe-btn:hover {
+                color: var(--accent-hover);
+            }
+
+        .meal-portions-widget {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background-color: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            padding: 3px 10px;
+            user-select: none;
+            flex-shrink: 0;
+        }
+
+            .meal-portions-widget .portion-btn {
+                font-size: 15px;
+                padding: 1px 7px;
+                border-radius: 999px;
+            }
+
+                .meal-portions-widget .portion-btn:hover {
+                    background-color: var(--accent-dim);
+                    color: var(--accent-hover);
+                }
+
+            .meal-portions-widget .meal-recalc-btn {
+                margin-left: 2px;
+                color: var(--accent-color);
+                font-size: 15px;
+            }
+
+                .meal-portions-widget .meal-recalc-btn:hover {
+                    color: var(--accent-hover);
+                }
+
+        .meal-portions-value {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+            min-width: 20px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .meal-ingredients {
+            margin: 10px 0 0 0;
+            padding: 0;
+            list-style: none;
+            color: var(--text-muted);
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        /* Результат замены ингредиента */
+        .sub-result {
+            padding: 14px;
+            background: var(--accent-dim);
+            border-left: 3px solid var(--accent-color);
+            border-radius: 8px;
+            margin-top: 10px;
+            line-height: 1.6;
+            color: var(--text-main);
+        }
+
+        /* Спиннер загрузки */
+        .loader {
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 30px;
+        }
+
+        .typing {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+            .typing span {
+                width: 8px;
+                height: 8px;
+                background: var(--accent-hover);
+                border-radius: 50%;
+                animation: pulse 1.2s infinite;
+            }
+
+                .typing span:nth-child(2) {
+                    animation-delay: 0.15s;
+                }
+
+                .typing span:nth-child(3) {
+                    animation-delay: 0.3s;
+                }
+
+        @keyframes pulse {
+            0%, 60%, 100% {
+                opacity: 0.3;
+                transform: scale(0.8);
+            }
+
+            30% {
+                opacity: 1;
+                transform: scale(1.1);
+            }
+        }
+
+        /* Замена ингредиента — поповер */
+        .substitute-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            animation: fadeIn 0.2s ease;
+        }
+
+        @media (min-width: 600px) {
+            .substitute-overlay {
+                align-items: center;
+            }
+        }
+
+        .substitute-popover {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 20px 20px 0 0;
+            padding: 24px 20px 28px;
+            width: 100%;
+            max-width: 480px;
+            max-height: 80vh;
+            overflow-y: auto;
+            animation: slideUp 0.25s ease;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+        }
+
+        @media (min-width: 600px) {
+            .substitute-popover {
+                border-radius: 20px;
+                animation: scaleIn 0.2s ease;
+                box-shadow: 0 10px 60px rgba(0,0,0,0.6);
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes scaleIn {
+            from {
+                transform: scale(0.92);
+                opacity: 0;
+            }
+
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .substitute-popover h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-main);
+            margin: 0 0 4px 0;
+        }
+
+        .substitute-popover .subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin: 0 0 16px 0;
+        }
+
+        .substitute-popover .close-btn {
+            float: right;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0 4px;
+            line-height: 1;
+        }
+
+            .substitute-popover .close-btn:hover {
+                color: var(--text-main);
+            }
+
+        /* Скелетон */
+        .skeleton-item {
+            height: 52px;
+            background: linear-gradient(90deg, var(--card-bg) 25%, rgba(255,255,255,0.04) 50%, var(--card-bg) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.4s infinite;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: 200% 0;
+            }
+
+            100% {
+                background-position: -200% 0;
+            }
+        }
+
+        /* Карточки-варианты */
+        .suggestion-card {
+            padding: 12px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-bottom: 8px;
+            background: rgba(255,255,255,0.02);
+        }
+
+            .suggestion-card:hover {
+                border-color: var(--accent-color);
+                background: var(--accent-glass);
+                border-left: 3px solid var(--accent-color);
+                padding-left: 11px;
+            }
+
+            .suggestion-card .name {
+                font-size: 14px;
+                font-weight: 600;
+                color: var(--text-main);
+            }
+
+            .suggestion-card .desc {
+                font-size: 12px;
+                color: var(--text-muted);
+                margin-top: 3px;
+            }
+
+        /* Свой вариант */
+        .custom-variant {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 8px;
+        }
+
+            .custom-variant input {
+                flex: 1;
+                background: rgba(255,255,255,0.04);
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 13px;
+                color: var(--text-main);
+                outline: none;
+            }
+
+                .custom-variant input:focus {
+                    border-color: var(--accent-color);
+                }
+
+            .custom-variant button {
+                background: var(--accent-color);
+                border: none;
+                color: #fff;
+                border-radius: 8px;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+            }
+
+                .custom-variant button:hover {
+                    background: var(--accent-hover);
+                }
+
+        /* Вспышка при замене */
+        @keyframes flashReplace {
+            0% {
+                background-color: var(--accent-dim);
+            }
+
+            100% {
+                background-color: transparent;
+            }
+        }
+
+        .flash-highlight {
+            animation: flashReplace 0.6s ease;
+            border-radius: 4px;
+        }
+
+        /* Ингредиент как ссылка */
+        .ingredient-link {
+            cursor: pointer;
+            border-bottom: 1px dashed var(--text-muted);
+            transition: all 0.15s ease;
+        }
+
+            .ingredient-link:hover {
+                color: var(--accent-hover);
+                border-bottom-color: var(--accent-color);
+            }
+
+        /* Заголовок ингредиентов с виджетом порций */
+        .recipe-ingredients-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px 0 8px 0;
+        }
+
+            .recipe-ingredients-header h3 {
+                margin: 0;
+            }
+
+        .recipe-portions-widget {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background-color: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            padding: 3px 10px;
+            user-select: none;
+            flex-shrink: 0;
+        }
+
+            .recipe-portions-widget .portion-btn {
+                font-size: 15px;
+                padding: 1px 7px;
+                border-radius: 999px;
+            }
+
+                .recipe-portions-widget .portion-btn:hover {
+                    background-color: var(--accent-dim);
+                    color: var(--accent-hover);
+                }
+
+            .recipe-portions-widget .recipe-recalc-btn {
+                margin-left: 2px;
+                color: var(--accent-color);
+                font-size: 15px;
+            }
+
+                .recipe-portions-widget .recipe-recalc-btn:hover {
+                    color: var(--accent-hover);
+                }
+
+        .recipe-portions-value {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+            min-width: 20px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Анимации пересчёта порций */
+        @keyframes valueBump {
+            0% {
+                transform: scale(1.3);
+                color: var(--accent-color);
+            }
+
+            100% {
+                transform: scale(1);
+                color: var(--text-main);
+            }
+        }
+
+        .value-bump {
+            animation: valueBump 0.25s ease;
+        }
+
+        /* Folder browser modal */
+        .folder-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .folder-modal {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            width: 520px;
+            max-height: 70vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .folder-modal-header {
+            padding: 16px 20px 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .folder-modal-breadcrumb {
+            padding: 8px 20px;
+            font-size: 13px;
+            color: var(--accent-color);
+            word-break: break-all;
+            cursor: pointer;
+        }
+
+            .folder-modal-breadcrumb span:hover {
+                text-decoration: underline;
+            }
+
+        .folder-modal-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 20px;
+        }
+
+        .folder-modal-item {
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.15s;
+        }
+
+            .folder-modal-item:hover {
+                background: var(--hover-bg);
+            }
+
+        .folder-modal-footer {
+            padding: 12px 20px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+            .folder-modal-footer button {
+                padding: 8px 20px;
+                border-radius: 10px;
+                border: 1px solid var(--border-color);
+                cursor: pointer;
+                font-size: 14px;
+            }
+
+            .folder-modal-footer .folder-select-btn {
+                background: var(--accent-color);
+                color: #fff;
+                border-color: var(--accent-color);
+            }
