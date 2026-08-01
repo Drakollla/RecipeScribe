@@ -18,19 +18,28 @@ public static class MealPlanMapping
     {
         var items = plan.Items
             .OrderBy(i => MealOrder.GetValueOrDefault(i.MealType, 99))
-            .Select(i => new MealPlanItemDto(
-            i.MealType switch
+            .Select(i => i.ToDto())
+            .ToList();
+
+        return new MealPlanDto(plan.Id, plan.Date.ToString("yyyy-MM-dd"), items);
+    }
+
+    public static MealPlanItemDto ToDto(this MealPlanItem item)
+    {
+        return new MealPlanItemDto(
+            item.Id,
+            item.MealType switch
             {
                 MealType.Breakfast => "Завтрак",
                 MealType.Lunch => "Обед",
                 MealType.Dinner => "Ужин",
                 MealType.Snack => "Перекус",
-                _ => i.MealType.ToString()
+                _ => item.MealType.ToString()
             },
-            new RecipeSummaryDto(i.Recipe.Id, i.Recipe.Title, i.Recipe.Ingredients.Select(ing => ing.Name).ToList()),
-            i.Portions
-        )).ToList();
-
-        return new MealPlanDto(plan.Id, plan.Date.ToString("yyyy-MM-dd"), items);
+            new RecipeSummaryDto(item.Recipe.Id, item.Recipe.Title, item.Recipe.Ingredients.Select(ing => ing.Name).ToList()),
+            item.Portions,
+            item.Recipe.Servings,
+            item.Recipe.Ingredients.Select(ing => new IngredientDto(ing.Name, ing.Amount)).ToList()
+        );
     }
 }

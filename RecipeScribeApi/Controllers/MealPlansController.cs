@@ -46,6 +46,14 @@ public class MealPlansController : ControllerBase
         return CreatedAtAction(nameof(GetPlan), new { chatId, date = plan.Date.ToString("yyyy-MM-dd") }, plan.ToDto());
     }
 
+    [HttpPatch("items/{itemId:guid}")]
+    public async Task<IActionResult> UpdateItemPortions(Guid itemId, [FromBody] UpdateMealPlanItemDto dto)
+    {
+        var item = await _mealPlanner.UpdatePlanItemPortionsAsync(itemId, dto.Portions);
+
+        return Ok(item.ToDto());
+    }
+
     [HttpGet("{id:guid}/shopping-list")]
     public async Task<IActionResult> GetShoppingList(Guid id)
     {

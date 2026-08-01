@@ -37,9 +37,11 @@ internal class MealPlanRepository : IMealPlanRepository
     public async Task<MealPlan?> GetPlanForDateAsync(long telegramChatId, DateOnly date)
     {
         return await _db.MealPlans
+            .AsSplitQuery()
             .Include(x => x.User)
             .Include(x => x.Items)
                 .ThenInclude(x => x.Recipe)
+                    .ThenInclude(x => x.Ingredients)
             .FirstOrDefaultAsync(x => x.User.TelegramChatId == telegramChatId && x.Date == date);
     }
 
@@ -110,5 +112,21 @@ internal class MealPlanRepository : IMealPlanRepository
             .Include(mpi => mpi.Recipe)
                 .ThenInclude(r => r.Ingredients)
             .ToListAsync();
+    }
+
+    public async Task<MealPlanItem?> UpdatePlanItemPortionsAsync(Guid planItemId, int portions)
+    {
+        var item = await _db.MealPlanItems
+            .Include(mpi => mpi.Recipe)
+                .ThenInclude(r => r.Ingredients)
+            .FirstOrDefaultAsync(mpi => mpi.Id == planItemId);
+
+        if (item is null)
+            return null;
+
+        item.Portions = portions;
+        await _db.SaveChangesAsync();
+
+        return item;
     }
 }

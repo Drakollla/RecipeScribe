@@ -92,6 +92,16 @@ public class MealPlannerService : IMealPlannerService
     public async Task<MealPlan?> GetPlanForDateAsync(long telegramChatId, DateOnly date) =>
         await _repo.GetPlanForDateAsync(telegramChatId, date);
 
+    public async Task<MealPlanItem> UpdatePlanItemPortionsAsync(Guid planItemId, int portions)
+    {
+        if (portions is < 1 or > 20)
+            throw new BadRequestException("Portions must be between 1 and 20.");
+
+        var item = await _repo.UpdatePlanItemPortionsAsync(planItemId, portions);
+
+        return item ?? throw new MealPlanItemNotFoundException(planItemId);
+    }
+
     public async Task<string> GetShoppingListAsync(Guid mealPlanId)
     {
         var planItems = await _repo.GetPlanItemsWithRecipesAsync(mealPlanId);
