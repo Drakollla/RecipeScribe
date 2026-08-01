@@ -1,6 +1,5 @@
 using Core.Contracts;
 using Core.Exceptions;
-using Core.Models;
 using Core.ValueObjects;
 using Microsoft.AspNetCore.Mvc;
 using RecipeScribeApi.Mapping;
@@ -53,7 +52,7 @@ public class MealPlansController : ControllerBase
     {
         var ingredientsJson = dto.Ingredients == null
             ? null
-            : PlanItemIngredients.Serialize(dto.Ingredients.Select(i => new Ingredient { Name = i.Name, Amount = i.Amount }));
+            : PlanItemIngredients.Serialize(dto.Ingredients.Select(i => new PlanItemIngredients.PlanIngredient(i.Name, i.Amount, i.OriginalName)));
 
         var item = await _mealPlanner.UpdatePlanItemPortionsAsync(itemId, dto.Portions, ingredientsJson);
 

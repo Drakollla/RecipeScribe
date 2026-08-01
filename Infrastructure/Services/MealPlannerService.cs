@@ -2,6 +2,7 @@
 using Core.Enums;
 using Core.Exceptions;
 using Core.Models;
+using Core.ValueObjects;
 using Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
@@ -130,6 +131,18 @@ public class MealPlannerService : IMealPlannerService
 
         foreach (var item in planItems)
         {
+            var savedIngredients = PlanItemIngredients.Deserialize(item.IngredientsJson);
+            
+            if (savedIngredients != null && savedIngredients.Count > 0)
+            {
+                scaledIngredients.AddRange(savedIngredients.Select(pi => new Ingredient
+                {
+                    Name = pi.Name,
+                    Amount = pi.Amount
+                }));
+                continue;
+            }
+
             var ingredients = await _scalingService.ScaleIngredientsAsync(item.Recipe, item.Portions);
             scaledIngredients.AddRange(ingredients);
         }

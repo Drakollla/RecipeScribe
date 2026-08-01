@@ -28,7 +28,7 @@ public static class MealPlanMapping
     public static MealPlanItemDto ToDto(this MealPlanItem item)
     {
         var ingredients = PlanItemIngredients.Deserialize(item.IngredientsJson)
-            ?.Select(ing => new IngredientDto(ing.Name, ing.Amount)).ToList()
+            ?.Select(ing => new IngredientDto(ing.Name, ing.Amount, ing.OriginalName)).ToList()
             ?? item.Recipe.Ingredients.Select(ing => new IngredientDto(ing.Name, ing.Amount)).ToList();
 
         return new MealPlanItemDto(
