@@ -465,6 +465,12 @@
             border-radius: 14px;
             padding: 12px 14px;
             margin-bottom: 12px;
+            transition: opacity 0.2s;
+        }
+
+        .meal-card.is-busy {
+            opacity: 0.55;
+            pointer-events: none;
         }
 
         .meal-card-header {

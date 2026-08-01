@@ -1,5 +1,7 @@
 using Core.Contracts;
 using Core.Exceptions;
+using Core.Models;
+using Core.ValueObjects;
 using Microsoft.AspNetCore.Mvc;
 using RecipeScribeApi.Mapping;
 using Shared.DTOs;
@@ -49,7 +51,11 @@ public class MealPlansController : ControllerBase
     [HttpPatch("items/{itemId:guid}")]
     public async Task<IActionResult> UpdateItemPortions(Guid itemId, [FromBody] UpdateMealPlanItemDto dto)
     {
-        var item = await _mealPlanner.UpdatePlanItemPortionsAsync(itemId, dto.Portions);
+        var ingredientsJson = dto.Ingredients == null
+            ? null
+            : PlanItemIngredients.Serialize(dto.Ingredients.Select(i => new Ingredient { Name = i.Name, Amount = i.Amount }));
+
+        var item = await _mealPlanner.UpdatePlanItemPortionsAsync(itemId, dto.Portions, ingredientsJson);
 
         return Ok(item.ToDto());
     }

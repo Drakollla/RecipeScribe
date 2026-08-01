@@ -11,7 +11,7 @@ public interface IMealPlannerService
 
     Task<MealPlan> GenerateAutoPlanAsync(long telegramChatId, DateOnly date, string userRequest);
 
-    Task<MealPlanItem> UpdatePlanItemPortionsAsync(Guid planItemId, int portions);
+    Task<MealPlanItem> UpdatePlanItemPortionsAsync(Guid planItemId, int portions, string? ingredientsJson);
 
     Task<string> GetShoppingListAsync(Guid mealPlanId);
 }

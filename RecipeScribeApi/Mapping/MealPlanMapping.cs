@@ -1,5 +1,6 @@
 using Core.Enums;
 using Core.Models;
+using Core.ValueObjects;
 using Shared.DTOs;
 
 namespace RecipeScribeApi.Mapping;
@@ -26,6 +27,10 @@ public static class MealPlanMapping
 
     public static MealPlanItemDto ToDto(this MealPlanItem item)
     {
+        var ingredients = PlanItemIngredients.Deserialize(item.IngredientsJson)
+            ?.Select(ing => new IngredientDto(ing.Name, ing.Amount)).ToList()
+            ?? item.Recipe.Ingredients.Select(ing => new IngredientDto(ing.Name, ing.Amount)).ToList();
+
         return new MealPlanItemDto(
             item.Id,
             item.MealType switch
@@ -39,7 +44,7 @@ public static class MealPlanMapping
             new RecipeSummaryDto(item.Recipe.Id, item.Recipe.Title, item.Recipe.Ingredients.Select(ing => ing.Name).ToList()),
             item.Portions,
             item.Recipe.Servings,
-            item.Recipe.Ingredients.Select(ing => new IngredientDto(ing.Name, ing.Amount)).ToList()
+            ingredients
         );
     }
 }

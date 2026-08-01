@@ -61,7 +61,7 @@
                 fetch(`/api/mealplans/items/${itemId}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ portions: st.portions })
+                    body: JSON.stringify({ portions: st.portions, ingredients: st.ingredients })
                 }).catch(function (e) { });
             }
         }
@@ -629,7 +629,7 @@
                     item: i
                 };
 
-                html += `<div class="meal-card">
+                html += `<div class="meal-card" id="mealCard_${itemId}">
                             <div class="meal-card-header">
                                 <span class="meal-type">${i.mealType}</span>
                                 <span class="meal-recipe-btn" onclick="openMenuRecipe('${itemId}')">${i.recipe.title}</span>
@@ -670,7 +670,7 @@
         // Изменение целевого числа порций пункта меню (без пересчёта — только число)
         function menuPortionsChange(itemId, delta) {
             var st = menuViewState[itemId];
-            if (!st) return;
+            if (!st || st.busy) return;
             var next = Math.max(1, Math.min(20, st.portions + delta));
             if (next === st.portions) return;
 
@@ -688,7 +688,14 @@
         // Пересчёт ингредиентов пункта меню через LLM + сохранение порций в БД
         async function llmMenuRescale(itemId) {
             var st = menuViewState[itemId];
-            if (!st) return;
+            if (!st || st.busy) return;
+
+            // Мьютим карточку и показываем спиннер на время LLM-запроса
+            st.busy = true;
+            var card = document.getElementById('mealCard_' + itemId);
+            if (card) card.classList.add('is-busy');
+            showLoading();
+
             try {
                 const r = await fetch(`/api/recipes/${st.recipeId}?servings=${st.portions}`);
                 if (!r.ok) throw new Error('Не удалось пересчитать');
@@ -710,10 +717,14 @@
                 fetch(`/api/mealplans/items/${itemId}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ portions: st.portions })
+                    body: JSON.stringify({ portions: st.portions, ingredients: st.ingredients })
                 }).catch(function (e) { });
             } catch (e) {
                 alert(e.message);
+            } finally {
+                st.busy = false;
+                if (card) card.classList.remove('is-busy');
+                hideLoading();
             }
         }
 

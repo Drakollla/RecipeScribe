@@ -114,7 +114,7 @@ internal class MealPlanRepository : IMealPlanRepository
             .ToListAsync();
     }
 
-    public async Task<MealPlanItem?> UpdatePlanItemPortionsAsync(Guid planItemId, int portions)
+    public async Task<MealPlanItem?> UpdatePlanItemPortionsAsync(Guid planItemId, int portions, string? ingredientsJson)
     {
         var item = await _db.MealPlanItems
             .Include(mpi => mpi.Recipe)
@@ -125,6 +125,10 @@ internal class MealPlanRepository : IMealPlanRepository
             return null;
 
         item.Portions = portions;
+
+        if (ingredientsJson != null)
+            item.IngredientsJson = ingredientsJson;
+
         await _db.SaveChangesAsync();
 
         return item;
