@@ -212,10 +212,14 @@
 
                     '<br><button class="save-btn" onclick="saveSettings()">💾 Сохранить</button>' +
                     '<span id="settingsSaveMsg" style="margin-left:12px;"></span>' +
+
+                    '<div id="llmProfilesSection" style="margin-top:28px;"></div>' +
+
                     '</div>';
 
                 hideLoading();
                 renderResults(html);
+                loadLlmProfiles();
             } catch (e) {
                 hideLoading();
                 renderResults('<h2>Ошибка</h2><p>Не удалось загрузить настройки: ' + e.message + '</p>');
@@ -250,6 +254,120 @@
                 hideLoading();
                 msgEl.innerText = '✗ ' + e.message;
                 msgEl.style.color = '#f44336';
+            }
+        }
+
+        // ===== LLM-профили (подключение модели через UI) =====
+        async function loadLlmProfiles() {
+            var section = document.getElementById('llmProfilesSection');
+            if (!section) return;
+
+            section.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Загрузка LLM-профилей...</p>';
+            try {
+                const r = await fetch('/api/llm/profiles');
+                if (!r.ok) throw new Error((await r.json()).error || 'Ошибка');
+                const data = await r.json();
+
+                var active = data.active || {};
+                var activeName = null;
+                (data.profiles || []).forEach(function (p) {
+                    if (p.endpoint === active.endpoint && p.modelId === active.modelId) {
+                        activeName = p.name;
+                    }
+                });
+
+                var html =
+                    '<h3 style="margin:0 0 4px 0;">Подключение модели (LLM)</h3>' +
+                    '<p style="color:var(--text-muted);margin:0 0 12px 0;font-size:13px;">Профили хранятся в папке tools. Активная модель применяется сразу, без перезапуска.</p>';
+
+                html += '<div class="llm-profile-list">';
+                (data.profiles || []).forEach(function (p) {
+                    var isActive = p.name === activeName;
+                    html += '<div class="llm-profile-item' + (isActive ? ' active' : '') + '">' +
+                        '<div style="flex:1;min-width:0;">' +
+                        '<div style="font-weight:600;">' + escapeHtml(p.name) + (isActive ? ' <span style="color:#4caf50;font-size:12px;">● активно</span>' : '') + '</div>' +
+                        '<div style="color:var(--text-muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(p.modelId) + '</div>' +
+                        '</div>' +
+                        '<button class="llm-profile-btn" onclick="activateLlmProfile(\'' + escapeHtml(p.name).replace(/'/g, "\\'") + '\')"' + (isActive ? ' disabled' : '') + ' style="' + (isActive ? 'opacity:0.5;' : '') + '">Активировать</button>' +
+                        '<button class="llm-profile-btn danger" onclick="deleteLlmProfile(\'' + escapeHtml(p.name).replace(/'/g, "\\'") + '\')">✕</button>' +
+                        '</div>';
+                });
+                if (!(data.profiles || []).length) {
+                    html += '<p style="color:var(--text-muted);font-size:13px;">Пока нет сохранённых профилей.</p>';
+                }
+                html += '</div>';
+
+                html +=
+                    '<div class="llm-profile-add" style="margin-top:12px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--border-color);border-radius:12px;padding:12px;">' +
+                    '<div style="font-weight:600;font-size:14px;">Добавить профиль</div>' +
+                    '<input type="text" id="llmProfileName" placeholder="Название (например: Groq, Ollama)" style="width:100%;">' +
+                    '<input type="text" id="llmProfileEndpoint" placeholder="Endpoint (например: https://api.groq.com/openai/v1)" style="width:100%;">' +
+                    '<input type="text" id="llmProfileModel" placeholder="Model ID (например: openai/gpt-oss-120b)" style="width:100%;">' +
+                    '<button class="save-btn" onclick="saveLlmProfile()" style="align-self:flex-start;">💾 Сохранить профиль</button>' +
+                    '<span id="llmProfileMsg" style="font-size:13px;"></span>' +
+                    '</div>';
+
+                section.innerHTML = html;
+            } catch (e) {
+                section.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Не удалось загрузить LLM-профили: ' + escapeHtml(e.message) + '</p>';
+            }
+        }
+
+        async function activateLlmProfile(name) {
+            if (!confirm('Активировать профиль "' + name + '"?')) return;
+            try {
+                const r = await fetch('/api/llm/profiles/active', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name })
+                });
+                if (!r.ok) throw new Error((await r.json()).error || 'Ошибка');
+                loadLlmProfiles();
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        }
+
+        async function saveLlmProfile() {
+            var name = document.getElementById('llmProfileName').value.trim();
+            var endpoint = document.getElementById('llmProfileEndpoint').value.trim();
+            var model = document.getElementById('llmProfileModel').value.trim();
+            var msgEl = document.getElementById('llmProfileMsg');
+
+            if (!name || !endpoint || !model) {
+                msgEl.innerText = '✗ Заполните все поля';
+                msgEl.style.color = '#f44336';
+                return;
+            }
+
+            try {
+                const r = await fetch('/api/llm/profiles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name, endpoint: endpoint, modelId: model })
+                });
+                if (!r.ok) throw new Error((await r.json()).error || 'Ошибка');
+                msgEl.innerText = '✓ Профиль сохранён';
+                msgEl.style.color = '#4caf50';
+                document.getElementById('llmProfileName').value = '';
+                document.getElementById('llmProfileEndpoint').value = '';
+                document.getElementById('llmProfileModel').value = '';
+                setTimeout(function () { msgEl.innerText = ''; }, 3000);
+                loadLlmProfiles();
+            } catch (e) {
+                msgEl.innerText = '✗ ' + e.message;
+                msgEl.style.color = '#f44336';
+            }
+        }
+
+        async function deleteLlmProfile(name) {
+            if (!confirm('Удалить профиль "' + name + '"?')) return;
+            try {
+                const r = await fetch('/api/llm/profiles/' + encodeURIComponent(name), { method: 'DELETE' });
+                if (!r.ok) throw new Error((await r.json()).error || 'Ошибка');
+                loadLlmProfiles();
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
             }
         }
 

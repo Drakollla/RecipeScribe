@@ -962,3 +962,52 @@
                 color: #fff;
                 border-color: var(--accent-color);
             }
+
+        .llm-profile-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .llm-profile-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            background: var(--card-bg);
+        }
+
+            .llm-profile-item.active {
+                border-color: #4caf50;
+            }
+
+        .llm-profile-btn {
+            padding: 6px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--card-bg);
+            color: var(--text-main);
+            font-size: 13px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+            .llm-profile-btn:hover:not(:disabled) {
+                background: var(--hover-bg);
+            }
+
+            .llm-profile-btn.danger {
+                color: #f44336;
+            }
+
+        .llm-profile-add input {
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--card-bg);
+            color: var(--text-main);
+            font-size: 14px;
+            box-sizing: border-box;
+        }
