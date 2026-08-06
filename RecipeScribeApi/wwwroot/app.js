@@ -189,6 +189,8 @@
 
         let _settingsCache = {};
 
+        let _settingsTab = 'general';
+
         async function renderSettingsForm() {
             showLoading();
             try {
@@ -201,6 +203,12 @@
                     '<h2 style="margin:0 0 8px 0;">Настройки</h2>' +
                     '<p style="color:var(--text-muted);margin-bottom:16px;">Настройки сохраняются в вашем профиле и используются во всех режимах.</p>' +
 
+                    '<div class="settings-tabs">' +
+                    '<button class="settings-tab-btn' + (_settingsTab === 'general' ? ' active' : '') + '" onclick="switchSettingsTab(\'general\')">Общие</button>' +
+                    '<button class="settings-tab-btn' + (_settingsTab === 'llm' ? ' active' : '') + '" onclick="switchSettingsTab(\'llm\')">Подключение модели (LLM)</button>' +
+                    '</div>' +
+
+                    '<div id="settingsGeneralTab" class="settings-tab-pane"' + (_settingsTab !== 'general' ? ' style="display:none;"' : '') + '>' +
                     '<label>Порций по умолчанию</label>' +
                     '<input type="number" id="settingsServings" min="1" max="20" value="' + (data.defaultServings || 2) + '" style="width:100px;">' +
 
@@ -212,18 +220,34 @@
 
                     '<br><button class="save-btn" onclick="saveSettings()">💾 Сохранить</button>' +
                     '<span id="settingsSaveMsg" style="margin-left:12px;"></span>' +
+                    '</div>' +
 
-                    '<div id="llmProfilesSection" style="margin-top:28px;"></div>' +
+                    '<div id="settingsLlmTab" class="settings-tab-pane"' + (_settingsTab !== 'llm' ? ' style="display:none;"' : '') + '>' +
+                    '<div id="llmProfilesSection"></div>' +
+                    '</div>' +
 
                     '</div>';
 
                 hideLoading();
                 renderResults(html);
-                loadLlmProfiles();
+                if (_settingsTab === 'llm') loadLlmProfiles();
             } catch (e) {
                 hideLoading();
                 renderResults('<h2>Ошибка</h2><p>Не удалось загрузить настройки: ' + e.message + '</p>');
             }
+        }
+
+        function switchSettingsTab(tab) {
+            _settingsTab = tab;
+            var generalEl = document.getElementById('settingsGeneralTab');
+            var llmEl = document.getElementById('settingsLlmTab');
+            var btnGeneral = document.querySelector('.settings-tab-btn[onclick*="\'general\'"]');
+            var btnLlm = document.querySelector('.settings-tab-btn[onclick*="\'llm\'"]');
+            if (generalEl) generalEl.style.display = tab === 'general' ? '' : 'none';
+            if (llmEl) llmEl.style.display = tab === 'llm' ? '' : 'none';
+            if (btnGeneral) btnGeneral.classList.toggle('active', tab === 'general');
+            if (btnLlm) btnLlm.classList.toggle('active', tab === 'llm');
+            if (tab === 'llm') loadLlmProfiles();
         }
 
         async function saveSettings() {
