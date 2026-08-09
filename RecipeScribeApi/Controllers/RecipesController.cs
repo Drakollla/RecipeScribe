@@ -19,6 +19,7 @@ public class RecipesController : ControllerBase
     private readonly IRecipeExtractorService _extractor;
     private readonly IScalingService _scalingService;
     private readonly IIngredientSubstitutor _substitutor;
+    private readonly IStepRewriter _stepRewriter;
     private readonly IMealPlanRepository _mealPlanRepo;
     private readonly ILogger<RecipesController> _logger;
 
@@ -27,6 +28,7 @@ public class RecipesController : ControllerBase
         IRecipeExtractorService extractor,
         IScalingService scalingService,
         IIngredientSubstitutor substitutor,
+        IStepRewriter stepRewriter,
         IMealPlanRepository mealPlanRepo,
         ILogger<RecipesController> logger)
     {
@@ -34,6 +36,7 @@ public class RecipesController : ControllerBase
         _extractor = extractor;
         _scalingService = scalingService;
         _substitutor = substitutor;
+        _stepRewriter = stepRewriter;
         _mealPlanRepo = mealPlanRepo;
         _logger = logger;
     }
@@ -68,11 +71,31 @@ public class RecipesController : ControllerBase
         if (itemId.HasValue)
             ingredients = await ApplySavedSubstitutionsAsync(itemId.Value, ingredients);
 
-        return Ok(recipe.ToDto() with
+        var variants = await GetVariantsAsync(recipe);
+        var sourceRecipe = recipe.SourceId is null ? null : await _repository.GetSourceAsync(recipe.Id);
+
+        return Ok(recipe.ToDto(
+            variants: variants,
+            sourceRecipe: sourceRecipe is null ? null : new RecipeVariantDto(sourceRecipe.Id, sourceRecipe.Title))
+            with
         {
             Servings = targetServings,
             Ingredients = ingredients
         });
+    }
+
+    private async Task<List<RecipeVariantDto>> GetVariantsAsync(Recipe recipe)
+    {
+        var sourceId = recipe.SourceId ?? recipe.Id;
+        var variants = await _repository.GetVariantsAsync(sourceId);
+
+        var list = new List<RecipeVariantDto>
+        {
+            new(sourceId, recipe.SourceId is null ? recipe.VariantTitle : null)
+        };
+
+        list.AddRange(variants.Select(v => new RecipeVariantDto(v.Id, v.VariantTitle)));
+        return list.DistinctBy(v => v.Id).ToList();
     }
 
     private async Task<List<IngredientDto>> ApplySavedSubstitutionsAsync(Guid itemId, List<IngredientDto> ingredients)
@@ -184,11 +207,85 @@ public class RecipesController : ControllerBase
         var recipe = await _repository.GetRecipeByIdAsync(id)
             ?? throw new RecipeNotFoundException(id);
 
-        var suggestions = await _substitutor.GetSuggestionsAsync(dto.Ingredient, recipe.Title);
+        var suggestions = await _substitutor.GetSuggestionsAsync(
+            dto.Ingredient,
+            recipe.Title,
+            otherIngredients: recipe.Ingredients
+                .Where(i => !string.Equals(i.Name, dto.Ingredient, StringComparison.OrdinalIgnoreCase))
+                .Select(i => i.Name)
+                .ToList(),
+            stepDescriptions: recipe.Steps
+                .OrderBy(s => s.Number)
+                .Select(s => s.Description)
+                .ToList());
 
         return Ok(new SubstitutionSuggestionsDto(
             suggestions.Select(s => new SuggestionDto(s.Name, s.Description)).ToList()
         ));
+    }
+
+    [HttpPost("{id:guid}/rewrite-steps")]
+    public async Task<IActionResult> RewriteSteps(Guid id, [FromBody] RewriteStepsDto dto)
+    {
+        var recipe = await _repository.GetRecipeByIdAsync(id)
+            ?? throw new RecipeNotFoundException(id);
+
+        var steps = await _stepRewriter.RewriteStepsAsync(
+            dto.Ingredient,
+            dto.Replacement,
+            recipe.Title,
+            otherIngredients: recipe.Ingredients
+                .Where(i => !string.Equals(i.Name, dto.Ingredient, StringComparison.OrdinalIgnoreCase))
+                .Select(i => i.Name)
+                .ToList(),
+            stepDescriptions: recipe.Steps
+                .OrderBy(s => s.Number)
+                .Select(s => s.Description)
+                .ToList());
+
+        var result = recipe.Steps
+            .OrderBy(s => s.Number)
+            .Select(s => new
+            {
+                s.Number,
+                Description = steps.FirstOrDefault(x => x.Number == s.Number)?.Description ?? s.Description
+            })
+            .ToList();
+
+        return Ok(new RewrittenStepsDto(result.Select(x => new RecipeStepDto(x.Number, x.Description)).ToList()));
+    }
+
+    [HttpPost("{id:guid}/variants")]
+    public async Task<IActionResult> CreateVariant(Guid id, [FromBody] CreateVariantDto dto)
+    {
+        var recipe = await _repository.GetRecipeByIdAsync(id)
+            ?? throw new RecipeNotFoundException(id);
+
+        var sourceId = recipe.SourceId ?? recipe.Id;
+
+        var variant = new Recipe
+        {
+            Title = recipe.Title,
+            VideoUrl = recipe.VideoUrl,
+            Servings = recipe.Servings,
+            IsBreakfast = recipe.IsBreakfast,
+            IsLunch = recipe.IsLunch,
+            IsDinner = recipe.IsDinner,
+            IsSnack = recipe.IsSnack,
+            PreparationTips = recipe.PreparationTips,
+            NutritionJson = recipe.NutritionJson,
+            SourceId = sourceId,
+            VariantTitle = string.IsNullOrWhiteSpace(dto.VariantTitle) ? "Вариант" : dto.VariantTitle.Trim(),
+            Ingredients = dto.Ingredients.Select(i => new Ingredient { Name = i.Name, Amount = i.Amount ?? "" }).ToList(),
+            Steps = dto.Steps.Select(s => new RecipeStep { Number = s.Number, Description = s.Description }).ToList()
+        };
+
+        await _repository.SaveRecipeAsync(variant);
+
+        _logger.LogInformation("Recipe variant {VariantId} created from source {SourceId}", variant.Id, sourceId);
+
+        var variants = await GetVariantsAsync(variant);
+        return Ok(variant.ToDto(variants: variants));
     }
 
     [HttpGet("{id:guid}/markdown")]

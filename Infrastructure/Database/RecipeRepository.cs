@@ -10,7 +10,8 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
 
     public async Task SaveRecipeAsync(Recipe recipe)
     {
-        var exists = await Context.Recipes.AnyAsync(r => r.Id == recipe.Id);
+        var exists = await FindByCondition(r => r.Id == recipe.Id, trackChanges: false)
+            .AnyAsync();
 
         if (exists)
             Update(recipe);
@@ -47,8 +48,8 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
         if (matchedIds.Count == 0)
             return new List<Recipe>();
 
-        var recipes = await Context.Recipes
-            .Where(r => matchedIds.Contains(r.Id))
+        var recipes = await FindByCondition(r => matchedIds
+            .Contains(r.Id), trackChanges: false)
             .AsSplitQuery()
             .Include(r => r.Ingredients)
             .Include(r => r.Steps)
@@ -64,11 +65,35 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
 
     public async Task<Recipe?> GetRecipeByIdAsync(Guid id)
     {
-        return await Context.Recipes
+        return await FindByCondition(r => r.Id == id, trackChanges: false)
             .AsSplitQuery()
             .Include(r => r.Ingredients)
             .Include(r => r.Steps)
-            .FirstOrDefaultAsync(r => r.Id == id);
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<List<Recipe>> GetVariantsAsync(Guid sourceId)
+    {
+        return await FindByCondition(r => r.SourceId == sourceId, trackChanges: false)
+            .AsSplitQuery()
+            .Include(r => r.Ingredients)
+            .Include(r => r.Steps)
+            .ToListAsync();
+    }
+
+    public async Task<Recipe?> GetSourceAsync(Guid id)
+    {
+        var recipe = await FindByCondition(r => r.Id == id, trackChanges: false)
+            .FirstOrDefaultAsync();
+
+        if (recipe?.SourceId is null)
+            return recipe;
+
+        return await FindByCondition(r => r.Id == recipe.SourceId, trackChanges: false)
+            .AsSplitQuery()
+            .Include(r => r.Ingredients)
+            .Include(r => r.Steps)
+            .FirstOrDefaultAsync();
     }
 
     public async Task<List<Recipe>> GetRecipesByUrlAsync(string url)
@@ -78,17 +103,17 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
 
         string targetUrl = url.Trim();
 
-        return await Context.Recipes
+        return await FindByCondition(r => r.VideoUrl == targetUrl, trackChanges: false)
             .AsSplitQuery()
             .Include(r => r.Ingredients)
             .Include(r => r.Steps)
-            .Where(r => r.VideoUrl == targetUrl)
             .ToListAsync();
     }
 
     public async Task DeleteRecipeAsync(Guid id)
     {
-        var recipe = await Context.Recipes.FindAsync(id);
+        var recipe = await FindByCondition(r => r.Id == id, trackChanges: true)
+            .FirstOrDefaultAsync();
 
         if (recipe != null)
         {

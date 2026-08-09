@@ -7,7 +7,7 @@ namespace RecipeScribeApi.Mapping;
 
 public static class RecipeMapping
 {
-    public static RecipeDto ToDto(this Recipe recipe)
+    public static RecipeDto ToDto(this Recipe recipe, List<RecipeVariantDto>? variants = null, RecipeVariantDto? sourceRecipe = null)
     {
         List<PreparationTipDto>? tips = null;
 
@@ -35,7 +35,11 @@ public static class RecipeMapping
             recipe.Ingredients.Select(i => new IngredientDto(i.Name, i.Amount)).ToList(),
             recipe.Steps.OrderBy(s => s.Number).Select(s => new RecipeStepDto(s.Number, s.Description)).ToList(),
             tips,
-            nutrition
+            nutrition,
+            recipe.SourceId,
+            recipe.VariantTitle,
+            variants,
+            sourceRecipe
         );
     }
 

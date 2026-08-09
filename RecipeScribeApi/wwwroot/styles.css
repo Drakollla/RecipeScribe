@@ -275,6 +275,7 @@
 
         /* Контейнер результатов */
         .results-container {
+            position: relative;
             margin-top: 24px;
             text-align: left;
             background-color: var(--card-bg);
@@ -811,6 +812,80 @@
                 color: var(--accent-hover);
                 border-bottom-color: var(--accent-color);
             }
+
+        /* Чипы-редакции рецепта (Оригинал + вариации) */
+        .recipe-variant-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin: 4px 0 16px 0;
+        }
+
+        .recipe-variant-chip {
+            padding: 5px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-muted);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+            .recipe-variant-chip:hover {
+                color: var(--text-main);
+                border-color: var(--accent-color);
+            }
+
+            .recipe-variant-chip.active {
+                color: var(--accent-color);
+                border-color: var(--accent-color);
+                background: rgba(255, 255, 255, 0.08);
+            }
+
+        /* Overlay перезаписи рецепта (во время LLM-вызова) */
+        .recipe-rewrite-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.65);
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            z-index: 50;
+            color: var(--text-main);
+            text-align: center;
+            padding: 24px;
+            backdrop-filter: blur(2px);
+            animation: fadeIn 0.2s ease;
+        }
+
+            .recipe-rewrite-overlay .rr-spinner {
+                width: 34px;
+                height: 34px;
+                border: 3px solid rgba(255, 255, 255, 0.25);
+                border-top-color: var(--accent-color);
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+            }
+
+            .recipe-rewrite-overlay .rr-text {
+                font-size: 15px;
+                font-weight: 600;
+            }
+
+            .recipe-rewrite-overlay .rr-sub {
+                font-size: 13px;
+                color: var(--text-muted);
+            }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
 
         /* Заголовок ингредиентов с виджетом порций */
         .recipe-ingredients-header {

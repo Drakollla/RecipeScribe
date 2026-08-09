@@ -8,6 +8,8 @@ public interface IRecipeRepository
     Task<List<Recipe>> GetAllRecipesAsync();
     Task<List<Recipe>> SearchByIngredientsAsync(List<string> searchProducts, int limit = 10);
     Task<Recipe?> GetRecipeByIdAsync(Guid id);
+    Task<List<Recipe>> GetVariantsAsync(Guid sourceId);
+    Task<Recipe?> GetSourceAsync(Guid id);
     Task<List<Recipe>> GetRecipesByUrlAsync(string url);
     Task DeleteRecipeAsync(Guid id);
 }
