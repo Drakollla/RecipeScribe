@@ -2,7 +2,7 @@
         let portions = 2;
         let activeRecipeId = null;
         let previousStateHtml = null;
-        let recipeViewState = { id: null, portions: 1, ingredients: [], steps: [], variants: [], sourceRecipe: null, sourceId: null, variantTitle: null, menuItemId: null, modified: false };
+        let recipeViewState = { id: null, recipe: null, portions: 1, ingredients: [], steps: [], variants: [], sourceRecipe: null, sourceId: null, variantTitle: null, menuItemId: null, modified: false };
         let currentRecipeObj = null;
         let menuViewState = {};
         let currentPlan = null;
@@ -66,8 +66,9 @@
             }
         }
 
-        function prepareRecipeView(recipe, portionsOverride, menuItemId) {
+function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             recipeViewState.id = recipe.id;
+            recipeViewState.recipe = recipe;
             // На старте показываем ингредиенты как сохранены (оригинальные количества).
             // Число порций — целевое (default Recipes из порции пункта меню).
             recipeViewState.portions = (portionsOverride != null) ? portionsOverride : portions;
@@ -408,6 +409,7 @@
                     if (Array.isArray(recipes)) {
                         if (recipes.length === 1) {
                             const recipe = recipes[0];
+                            currentRecipeObj = recipe;
                             activeRecipeId = recipe.id;
                             prepareRecipeView(recipe);
                             renderResults(renderRecipeHtml(recipe));
@@ -425,6 +427,7 @@
                         }
                     } else {
                         // fallback: single object (backward compat)
+                        currentRecipeObj = recipes;
                         activeRecipeId = recipes.id;
                         prepareRecipeView(recipes);
                         renderResults(renderRecipeHtml(recipes));
@@ -573,6 +576,14 @@
         function renderRecipeHtml(recipe) {
             let html = `<h2>${recipe.title}</h2>`;
 
+            // Помечено как изменённый рецепт — баннер с кнопкой «Сохранить как вариант»
+            if (recipeViewState.modified && !recipeViewState.sourceId) {
+                html += '<div class="recipe-modified-banner">' +
+                    '<span>✏️ Рецепт изменён</span>' +
+                    `<button class="action-btn" onclick="saveAsVariant()">➕ Сохранить как вариант</button>` +
+                    '</div>';
+            }
+
             // Чипы-редакции (Оригинал + вариации группы)
             var variants = recipe.variants || recipeViewState.variants || [];
             if (variants && variants.length > 0) {
@@ -580,10 +591,6 @@
                 variants.forEach(function (v) {
                     var active = v.id === recipe.id ? ' active' : '';
                     var label = v.variantTitle || 'Оригинал';
-                    // Изменения ещё не сохранены в вариант — помечаем активный чип
-                    if (active && recipeViewState.modified && !recipeViewState.sourceId) {
-                        label = '✏️ Изменено';
-                    }
                     html += '<span class="recipe-variant-chip' + active + '" onclick="showRecipeVariant(\'' + v.id + '\')">' + escapeHtml(label) + '</span>';
                 });
                 html += '</div>';
@@ -647,11 +654,6 @@
             // Группа кнопок внизу
             html += `<div class="btn-group">
                         <button class="action-btn" onclick="exportToObsidian('${recipe.id}')">💾 Сохранить в Obsidian</button>`;
-
-            // «Сохранить как вариант» доступна только при несохранённых изменениях
-            if (recipeViewState.modified) {
-                html += `<button class="action-btn" onclick="saveAsVariant()">➕ Сохранить как вариант</button>`;
-            }
 
             // Если есть сохраненный предыдущий экран (меню или поиск по продуктам) — выводим кнопку Назад
             if (previousStateHtml) {
@@ -1067,10 +1069,11 @@
             // Замена на странице рецепта (не из меню) — переписываем затронутые шаги через LLM
             if (!targetItemId && recipeViewState.id) {
                 recipeViewState.modified = true;
+                rerenderRecipeCard();
                 rewriteRecipeSteps(originalFromRecipe, newName);
-            } else if (recipeViewState.id && currentRecipeObj) {
+            } else if (recipeViewState.id) {
                 // Меню — только обновляем карточку, без режима «изменено»
-                renderResults(renderRecipeHtml(currentRecipeObj));
+                rerenderRecipeCard();
             }
 
             closeSubstitutePopover();
@@ -1094,6 +1097,13 @@
             if (ov) ov.remove();
         }
 
+        // Перерисовка карточки рецепта из текущего состояния (после замены/перезаписи шагов)
+        function rerenderRecipeCard() {
+            if (recipeViewState.recipe) {
+                renderResults(renderRecipeHtml(recipeViewState.recipe));
+            }
+        }
+
         // Точечная перегенерация шагов, где упоминается заменённый ингредиент
         async function rewriteRecipeSteps(ingredient, replacement) {
             showRecipeRewriteOverlay();
@@ -1108,9 +1118,7 @@
 
                 if (data.steps && data.steps.length) {
                     recipeViewState.steps = data.steps;
-                    if (currentRecipeObj) {
-                        renderResults(renderRecipeHtml(currentRecipeObj));
-                    }
+                    rerenderRecipeCard();
                 }
             } catch (e) {
                 // Шаги остаются без изменений — это не критично
