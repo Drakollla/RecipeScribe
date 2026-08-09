@@ -115,10 +115,32 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
         var recipe = await FindByCondition(r => r.Id == id, trackChanges: true)
             .FirstOrDefaultAsync();
 
-        if (recipe != null)
+        if (recipe == null)
+            return;
+
+        var idsToDelete = new List<Guid> { recipe.Id };
+
+        if (recipe.SourceId is null)
         {
-            Delete(recipe);
-            await SaveAsync();
+            var variants = await FindByCondition(r => r.SourceId == recipe.Id, trackChanges: false).ToListAsync();
+            idsToDelete.AddRange(variants.Select(v => v.Id));
         }
+
+        var planItems = await Context.MealPlanItems
+            .Where(mpi => idsToDelete.Contains(mpi.RecipeId))
+            .ToListAsync();
+
+        Context.MealPlanItems.RemoveRange(planItems);
+
+        await SaveAsync();
+
+        foreach (var idToDelete in idsToDelete)
+        {
+            var entity = await FindByCondition(r => r.Id == idToDelete, trackChanges: true).FirstOrDefaultAsync();
+            if (entity != null)
+                Delete(entity);
+        }
+
+        await SaveAsync();
     }
 }

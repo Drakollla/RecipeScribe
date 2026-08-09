@@ -204,9 +204,11 @@ public class RecipesController : ControllerBase
 
         var sourceId = recipe.SourceId ?? recipe.Id;
 
+        var variantTitle = dto.VariantTitle?.Trim();
+
         var variant = new Recipe
         {
-            Title = recipe.Title,
+            Title = string.IsNullOrWhiteSpace(variantTitle) ? recipe.Title : variantTitle,
             VideoUrl = recipe.VideoUrl,
             Servings = recipe.Servings,
             IsBreakfast = recipe.IsBreakfast,
@@ -216,7 +218,7 @@ public class RecipesController : ControllerBase
             PreparationTips = recipe.PreparationTips,
             NutritionJson = recipe.NutritionJson,
             SourceId = sourceId,
-            VariantTitle = string.IsNullOrWhiteSpace(dto.VariantTitle) ? "Вариант" : dto.VariantTitle.Trim(),
+            VariantTitle = string.IsNullOrWhiteSpace(variantTitle) ? "Вариант" : variantTitle,
             Ingredients = dto.Ingredients.Select(i => new Ingredient { Name = i.Name, Amount = i.Amount ?? "" }).ToList(),
             Steps = dto.Steps.Select(s => new RecipeStep { Number = s.Number, Description = s.Description }).ToList()
         };
