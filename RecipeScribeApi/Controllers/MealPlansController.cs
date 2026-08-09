@@ -1,6 +1,5 @@
 using Core.Contracts;
 using Core.Exceptions;
-using Core.ValueObjects;
 using Microsoft.AspNetCore.Mvc;
 using RecipeScribeApi.Mapping;
 using Shared.DTOs;
@@ -12,10 +11,12 @@ namespace RecipeScribeApi.Controllers;
 public class MealPlansController : ControllerBase
 {
     private readonly IMealPlannerService _mealPlanner;
+    private readonly IRecipeRepository _recipeRepository;
 
-    public MealPlansController(IMealPlannerService mealPlanner)
+    public MealPlansController(IMealPlannerService mealPlanner, IRecipeRepository recipeRepository)
     {
         _mealPlanner = mealPlanner;
+        _recipeRepository = recipeRepository;
     }
 
     [HttpGet]
@@ -31,7 +32,7 @@ public class MealPlansController : ControllerBase
         if (plan is null)
             return NoContent();
 
-        return Ok(plan.ToDto());
+        return Ok(await plan.ToDtoAsync(_recipeRepository));
     }
 
     [HttpPost("generate")]
@@ -44,19 +45,15 @@ public class MealPlansController : ControllerBase
 
         var plan = await _mealPlanner.GenerateAutoPlanAsync(chatId, targetDate.Value, dto.Preferences ?? "");
 
-        return CreatedAtAction(nameof(GetPlan), new { chatId, date = plan.Date.ToString("yyyy-MM-dd") }, plan.ToDto());
+        return CreatedAtAction(nameof(GetPlan), new { chatId, date = plan.Date.ToString("yyyy-MM-dd") }, await plan.ToDtoAsync(_recipeRepository));
     }
 
     [HttpPatch("items/{itemId:guid}")]
-    public async Task<IActionResult> UpdateItemPortions(Guid itemId, [FromBody] UpdateMealPlanItemDto dto)
+    public async Task<IActionResult> UpdateItem(Guid itemId, [FromBody] UpdateMealPlanItemDto dto)
     {
-        var ingredientsJson = dto.Ingredients == null
-            ? null
-            : PlanItemIngredients.Serialize(dto.Ingredients.Select(i => new PlanItemIngredients.PlanIngredient(i.Name, i.Amount, i.OriginalName)));
+        var item = await _mealPlanner.UpdatePlanItemAsync(itemId, dto.Portions, dto.RecipeId);
 
-        var item = await _mealPlanner.UpdatePlanItemPortionsAsync(itemId, dto.Portions, ingredientsJson);
-
-        return Ok(item.ToDto());
+        return Ok(await item.ToDtoAsync(_recipeRepository));
     }
 
     [HttpGet("{id:guid}/shopping-list")]

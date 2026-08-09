@@ -47,22 +47,43 @@
         // Пересчёт ингредиентов через LLM (для яиц/специй и т.п.)
         async function llmRescale() {
             if (!recipeViewState.id) return;
-            const itemId = recipeViewState.menuItemId;
-            await showRecipe(recipeViewState.id, recipeViewState.portions, itemId);
+            await showRecipe(recipeViewState.id, recipeViewState.portions);
+        }
 
-            // Рецепт открыт из меню — отражаем пересчёт в карточке и в БД
-            if (itemId && menuViewState[itemId]) {
-                const st = menuViewState[itemId];
-                st.portions = recipeViewState.portions;
-                st.ingredients = recipeViewState.ingredients.map(function (x) {
-                    return { name: x.name, amount: x.amount, originalName: x.originalName };
+        // Переключение рецепта в меню на вариант той же группы (PATCH item recipeId)
+        async function switchMenuRecipeVariant(itemId, recipeId) {
+            var st = menuViewState[itemId];
+            if (!st || st.busy) return;
+
+            st.busy = true;
+            var card = document.getElementById('mealCard_' + itemId);
+            if (card) card.classList.add('is-busy');
+            showLoading();
+
+            try {
+                const r = await fetch('/api/mealplans/items/' + itemId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ portions: st.portions, recipeId: recipeId })
                 });
+                if (!r.ok) throw new Error('Не удалось сменить вариант');
+                const item = await r.json();
 
+                st.recipeId = item.recipe.id;
+                st.ingredients = item.ingredients || [];
+                st.modified = false;
                 if (st.item) {
-                    st.item.portions = st.portions;
+                    st.item.recipe = item.recipe;
                     st.item.ingredients = st.ingredients.slice();
                 }
-                patchMenuItem(itemId, st);
+
+                rerenderMealCard(itemId);
+            } catch (e) {
+                alert(e.message);
+            } finally {
+                st.busy = false;
+                if (card) card.classList.remove('is-busy');
+                hideLoading();
             }
         }
 
@@ -693,36 +714,123 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                     recipeId: i.recipe.id,
                     portions: i.portions,
                     ingredients: ingredients,
-                    item: i
+                    item: i,
+                    modified: false
                 };
 
-                html += `<div class="meal-card" id="mealCard_${itemId}">
-                            <div class="meal-card-header">
-                                <span class="meal-type">${i.mealType}</span>
-                                <span class="meal-recipe-btn" onclick="openMenuRecipe('${itemId}')">${i.recipe.title}</span>
-                                <div class="meal-portions-widget" title="Пересчитать количество ингредиентов">
-                                    <span>🍽️</span>
-                                    <button class="portion-btn" onclick="menuPortionsChange('${itemId}', -1)">−</button>
-                                    <span class="meal-portions-value" id="menuPortionsVal_${itemId}">${i.portions}</span>
-                                    <button class="portion-btn" onclick="menuPortionsChange('${itemId}', 1)">+</button>
-                                    <button class="portion-btn meal-recalc-btn" onclick="llmMenuRescale('${itemId}')" title="Пересчитать ингредиенты">↻</button>
-                                </div>
-                            </div>
-                            <ul class="meal-ingredients" id="menuIngredients_${itemId}">${buildMenuIngredientItems(ingredients, itemId, i.recipe.id)}</ul>
-                         </div>`;
+                html += buildMealCardHtml(i, itemId);
             });
 
             html += '</div>';
 
             // Группа кнопок: список покупок и генерация нового меню
-            html += `<div class="btn-group">
+            html += `<div class="btn-group meal-plan-actions">
                         <button class="action-btn" onclick="showShoppingList('${plan.id}')">🛒 Список покупок</button>
                         <button class="action-btn secondary" onclick="regenerateMenu()">🔄 Сгенерировать заново</button>
                      </div>`;
             return html;
         }
 
-        // Отрисовка ингредиентов пункта меню (с кликом для замены через LLM)
+        // Отрисовка одной карточки меню: заголовок, варианты группы, баннер «изменён», ингредиенты
+        function buildMealCardHtml(item, itemId) {
+            var st = menuViewState[itemId] || {};
+            var portions = st.portions != null ? st.portions : item.portions;
+            var ingredients = (st.ingredients || item.ingredients || []);
+
+            var html = '<div class="meal-card" id="mealCard_' + itemId + '">';
+            html += '<div class="meal-card-header">' +
+                '<span class="meal-type">' + escapeHtml(item.mealType) + '</span>' +
+                '<span class="meal-recipe-btn" onclick="openMenuRecipe(\'' + itemId + '\')">' + escapeHtml(item.recipe.title) + '</span>' +
+                '<div class="meal-portions-widget" title="Пересчитать количество ингредиентов">' +
+                '<span>🍽️</span>' +
+                '<button class="portion-btn" onclick="menuPortionsChange(\'' + itemId + '\', -1)">−</button>' +
+                '<span class="meal-portions-value" id="menuPortionsVal_' + itemId + '">' + portions + '</span>' +
+                '<button class="portion-btn" onclick="menuPortionsChange(\'' + itemId + '\', 1)">+</button>' +
+                '<button class="portion-btn meal-recalc-btn" onclick="llmMenuRescale(\'' + itemId + '\')" title="Пересчитать ингредиенты">↻</button>' +
+                '</div></div>';
+
+            var variants = item.variants || [];
+            if (variants.length > 0) {
+                html += '<div class="recipe-variant-chips">';
+                variants.forEach(function (v) {
+                    var active = (v.id === item.recipe.id && !st.modified) ? ' active' : '';
+                    var label = escapeHtml(v.variantTitle || 'Оригинал');
+                    html += '<span class="recipe-variant-chip' + active + '" onclick="switchMenuRecipeVariant(\'' + itemId + '\', \'' + v.id + '\')">' + label + '</span>';
+                });
+                html += '</div>';
+            }
+
+            if (st.modified) {
+                html += '<div class="recipe-modified-banner">' +
+                    '<span>✏️ Рецепт изменён</span>' +
+                    '<button class="action-btn" onclick="saveMenuVariant(\'' + itemId + '\')">➕ Сохранить как вариант</button>' +
+                    '</div>';
+            }
+
+            html += '<ul class="meal-ingredients" id="menuIngredients_' + itemId + '">' +
+                buildMenuIngredientItems(ingredients, itemId, st.recipeId || item.recipe.id) +
+                '</ul>';
+            html += '</div>';
+            return html;
+        }
+
+        // Перерисовка одной карточки меню из её состояния
+        function rerenderMealCard(itemId) {
+            var st = menuViewState[itemId];
+            var card = document.getElementById('mealCard_' + itemId);
+            if (!st || !card) return;
+            card.outerHTML = buildMealCardHtml(st.item, itemId);
+        }
+
+        // Сохранение изменённого блюда карточки меню как варианта рецепта + переключение пункта на вариант
+        async function saveMenuVariant(itemId) {
+            var st = menuViewState[itemId];
+            if (!st || st.busy) return;
+
+            var title = prompt('Название варианта (например: "без сметаны"):');
+            if (title === null) return;
+
+            showLoading();
+            try {
+                const res = await fetch('/api/recipes/' + st.recipeId + '?servings=' + st.portions);
+                if (!res.ok) throw new Error('Не удалось загрузить рецепт');
+                const recipe = await res.json();
+
+                var ingredients = (st.ingredients || []).map(function (x) { return { name: x.name, amount: x.amount || '' }; });
+                var steps = (recipe.steps || []).map(function (s) { return { number: s.number, description: s.description }; });
+
+                const r = await fetch('/api/recipes/' + st.recipeId + '/variants', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ variantTitle: title, ingredients: ingredients, steps: steps })
+                });
+                if (!r.ok) throw new Error('Не удалось сохранить вариант');
+                const created = await r.json();
+
+                const p = await fetch('/api/mealplans/items/' + itemId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ portions: st.portions, recipeId: created.id })
+                });
+                if (!p.ok) throw new Error('Не удалось применить вариант к пункту меню');
+                const updated = await p.json();
+
+                st.recipeId = updated.recipe.id;
+                st.ingredients = updated.ingredients || [];
+                st.modified = false;
+                if (st.item) {
+                    st.item.recipe = updated.recipe;
+                    st.item.ingredients = st.ingredients.slice();
+                }
+
+                rerenderMealCard(itemId);
+                alert('Вариант сохранён и применён к пункту меню');
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            } finally {
+                hideLoading();
+            }
+        }
         function buildMenuIngredientItems(ingredients, itemId, recipeId) {
             var html = '';
             ingredients.forEach(function (i) {
@@ -764,7 +872,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             showLoading();
 
             try {
-                const r = await fetch(`/api/recipes/${st.recipeId}?servings=${st.portions}&itemId=${itemId}`);
+                const r = await fetch(`/api/recipes/${st.recipeId}?servings=${st.portions}`);
                 if (!r.ok) throw new Error('Не удалось пересчитать');
                 const recipe = await r.json();
 
@@ -828,8 +936,8 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             activeRecipeId = id;
             try {
                 const url = servingsOverride != null
-                    ? `/api/recipes/${id}?servings=${servingsOverride}${menuItemId ? '&itemId=' + menuItemId : ''}`
-                    : `/api/recipes/${id}${menuItemId ? '?itemId=' + menuItemId : ''}`;
+                    ? `/api/recipes/${id}?servings=${servingsOverride}`
+                    : `/api/recipes/${id}`;
                 const r = await fetch(url);
                 if (!r.ok) throw new Error('Рецепт не найден');
                 const recipe = await r.json();
@@ -895,11 +1003,15 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             }
         }
 
-        // Блокировка изменения карточек меню, пока собирается список покупок
+        // Блокировка изменения карточек меню и кнопок, пока собирается список покупок
         function setMenuLocked(locked) {
             document.querySelectorAll('.meal-card').forEach(function (card) {
                 if (locked) card.classList.add('is-busy');
                 else card.classList.remove('is-busy');
+            });
+            document.querySelectorAll('.meal-plan-actions').forEach(function (group) {
+                if (locked) group.classList.add('is-busy');
+                else group.classList.remove('is-busy');
             });
         }
 
@@ -1030,9 +1142,29 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                 substituteIngredientEl.classList.remove('flash-highlight');
             }, 600);
 
-            // Настоящее имя из рецепта, если текущее имя — уже применённая замена
             var originalFromRecipe = originalName;
-            if (!substituteMenuItemId && recipeViewState.ingredients) {
+
+            // Замена на карточке меню — обновляем состояние пункта меню и включаем режим «изменён»
+            if (substituteMenuItemId && menuViewState[substituteMenuItemId]) {
+                var st = menuViewState[substituteMenuItemId];
+                (st.ingredients || []).forEach(function (ing) {
+                    if (ing.name === originalName && ing.originalName) originalFromRecipe = ing.originalName;
+                });
+                (st.ingredients || []).forEach(function (ing) {
+                    if (ing.name === originalName) {
+                        if (!ing.originalName) ing.originalName = originalFromRecipe;
+                        ing.name = newName;
+                    }
+                });
+                st.modified = true;
+                if (st.item) st.item.ingredients = st.ingredients.slice();
+                rerenderMealCard(substituteMenuItemId);
+                closeSubstitutePopover();
+                return;
+            }
+
+            // Было ли это замена уже применённая ранее (originalName хранит исходное имя из рецепта)
+            if (recipeViewState.ingredients) {
                 (recipeViewState.ingredients || []).forEach(function (ri) {
                     if (ri.name === originalName && ri.originalName) originalFromRecipe = ri.originalName;
                 });
@@ -1040,7 +1172,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
 
             // Синхронизируем состояние страницы рецепта, чтобы при повторных заменах
             // сохранялся исходный originalName (настоящее имя из рецепта)
-            if (!substituteMenuItemId && recipeViewState.ingredients) {
+            if (recipeViewState.ingredients) {
                 recipeViewState.ingredients.forEach(function (ri) {
                     if (ri.name === originalName) {
                         if (!ri.originalName) ri.originalName = originalFromRecipe;
@@ -1049,33 +1181,14 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                 });
             }
 
-            // Замена на карточке меню ИЛИ на странице рецепта, открытого из меню, —
-            // сохраняем в пункт меню (IngredientsJson), чтобы пережить перезапуск и пересчёт порций.
-            var targetItemId = substituteMenuItemId || recipeViewState.menuItemId;
-            if (targetItemId) {
-                var st = menuViewState[targetItemId];
-                if (st) {
-                    st.ingredients.forEach(function (ing) {
-                        if (ing.name === originalName || ing.originalName === originalName) {
-                            if (!ing.originalName) ing.originalName = originalFromRecipe;
-                            ing.name = newName;
-                        }
-                    });
-                    if (st.item) st.item.ingredients = st.ingredients.slice();
-                    patchMenuItem(targetItemId, st);
-                }
-            }
-
-            // Замена на странице рецепта (не из меню) — переписываем затронутые шаги через LLM
-            if (!targetItemId && recipeViewState.id) {
+            // Замена всегда переводит рецепт в режим «изменён» — и на странице рецепта,
+            // и когда рецепт открыт из меню (сохранить как вариант, затем переключить пункт меню)
+            if (recipeViewState.id) {
                 recipeViewState.modified = true;
-                rerenderRecipeCard();
                 rewriteRecipeSteps(originalFromRecipe, newName);
-            } else if (recipeViewState.id) {
-                // Меню — только обновляем карточку, без режима «изменено»
-                rerenderRecipeCard();
             }
 
+            rerenderRecipeCard();
             closeSubstitutePopover();
         }
 
@@ -1128,12 +1241,12 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             }
         }
 
-        // Сохранение порций и ингредиентов пункта меню в БД
+        // Сохранение числа порций пункта в БД
         function patchMenuItem(itemId, st) {
             fetch(`/api/mealplans/items/${itemId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ portions: st.portions, ingredients: st.ingredients })
+                body: JSON.stringify({ portions: st.portions })
             }).catch(function (e) { });
         }
 

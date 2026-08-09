@@ -59,6 +59,7 @@ internal class MealPlanRepository : IMealPlanRepository
         return await _db.MealPlans
             .Include(mp => mp.Items)
                 .ThenInclude(mpi => mpi.Recipe)
+                    .ThenInclude(r => r.Ingredients)
             .FirstAsync(mp => mp.Id == plan.Id);
     }
 
@@ -78,6 +79,11 @@ internal class MealPlanRepository : IMealPlanRepository
             .OrderBy(r => r.LastPlannedAt ?? DateTime.MinValue)
             .FirstOrDefaultAsync();
     }
+
+    public async Task<Recipe?> GetRecipeByIdAsync(Guid recipeId) =>
+        await _db.Recipes
+            .Include(r => r.Ingredients)
+            .FirstOrDefaultAsync(r => r.Id == recipeId);
 
     public async Task UpdateRecipeLastPlannedAtAsync(Guid recipeId)
     {
@@ -122,7 +128,7 @@ internal class MealPlanRepository : IMealPlanRepository
             .FirstOrDefaultAsync(mpi => mpi.Id == planItemId);
     }
 
-    public async Task<MealPlanItem?> UpdatePlanItemPortionsAsync(Guid planItemId, int portions, string? ingredientsJson)
+    public async Task<MealPlanItem?> UpdatePlanItemAsync(Guid planItemId, int portions, Guid? recipeId = null)
     {
         var item = await _db.MealPlanItems
             .Include(mpi => mpi.Recipe)
@@ -132,9 +138,21 @@ internal class MealPlanRepository : IMealPlanRepository
         if (item is null)
             return null;
 
+        if (recipeId.HasValue && recipeId.Value != item.RecipeId)
+        {
+            var source = item.Recipe.SourceId ?? item.Recipe.Id;
+            var target = await _db.Recipes
+                .Include(r => r.Ingredients)
+                .FirstOrDefaultAsync(r => r.Id == recipeId.Value);
+
+            if (target is null || (target.SourceId ?? target.Id) != source)
+                throw new Core.Exceptions.BadRequestException("Recipe must be a variant of the same dish.");
+
+            item.RecipeId = recipeId.Value;
+            item.Recipe = target;
+        }
+
         item.Portions = portions;
-        if (ingredientsJson != null)
-            item.IngredientsJson = ingredientsJson;
 
         await _db.SaveChangesAsync();
 

@@ -3,7 +3,6 @@ using Core.Enums;
 using Core.Exceptions;
 using Core.Helpers;
 using Core.Models;
-using Core.ValueObjects;
 using Microsoft.AspNetCore.Mvc;
 using RecipeScribeApi.Mapping;
 using Shared.DTOs;
@@ -51,7 +50,7 @@ public class RecipesController : ControllerBase
     }
 
     [HttpGet("{id:guid}", Name = "GetRecipeById")]
-    public async Task<IActionResult> GetById(Guid id, [FromQuery] int? servings = null, [FromQuery] Guid? itemId = null, CancellationToken ct = default)
+    public async Task<IActionResult> GetById(Guid id, [FromQuery] int? servings = null, CancellationToken ct = default)
     {
         var recipe = await _repository.GetRecipeByIdAsync(id)
             ?? throw new RecipeNotFoundException(id);
@@ -68,14 +67,12 @@ public class RecipesController : ControllerBase
 
         var ingredients = baseIngredients.Select(i => new IngredientDto(i.Name, i.Amount)).ToList();
 
-        if (itemId.HasValue)
-            ingredients = await ApplySavedSubstitutionsAsync(itemId.Value, ingredients);
-
-        var variants = await GetVariantsAsync(recipe);
+        var variants = await _repository.GetVariantsAsync(recipe.SourceId ?? recipe.Id);
+        var variantDtos = recipe.ToVariantDtos(variants);
         var sourceRecipe = recipe.SourceId is null ? null : await _repository.GetSourceAsync(recipe.Id);
 
         return Ok(recipe.ToDto(
-            variants: variants,
+            variants: variantDtos,
             sourceRecipe: sourceRecipe is null ? null : new RecipeVariantDto(sourceRecipe.Id, sourceRecipe.Title))
             with
         {
@@ -83,62 +80,6 @@ public class RecipesController : ControllerBase
             Ingredients = ingredients
         });
     }
-
-    private async Task<List<RecipeVariantDto>> GetVariantsAsync(Recipe recipe)
-    {
-        var sourceId = recipe.SourceId ?? recipe.Id;
-        var variants = await _repository.GetVariantsAsync(sourceId);
-
-        var list = new List<RecipeVariantDto>
-        {
-            new(sourceId, recipe.SourceId is null ? recipe.VariantTitle : null)
-        };
-
-        list.AddRange(variants.Select(v => new RecipeVariantDto(v.Id, v.VariantTitle)));
-        return list.DistinctBy(v => v.Id).ToList();
-    }
-
-    private async Task<List<IngredientDto>> ApplySavedSubstitutionsAsync(Guid itemId, List<IngredientDto> ingredients)
-    {
-        var item = await _mealPlanRepo.GetPlanItemByIdAsync(itemId);
-        var saved = item?.IngredientsJson is null ? null : PlanItemIngredients.Deserialize(item.IngredientsJson);
-        
-        if (saved is null || saved.Count == 0)
-            return ingredients;
-
-        var subs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        
-        foreach (var ing in saved)
-        {
-            if (!string.IsNullOrWhiteSpace(ing.OriginalName) &&
-                !string.Equals(ing.OriginalName, ing.Name, StringComparison.OrdinalIgnoreCase))
-                subs[ing.OriginalName] = ing.Name;
-        }
-
-        if (subs.Count == 0 && saved.Count == ingredients.Count)
-        {
-            for (int k = 0; k < saved.Count; k++)
-            {
-                if (!string.Equals(NormalizeName(saved[k].Name), NormalizeName(ingredients[k].Name), StringComparison.Ordinal))
-                    subs[ingredients[k].Name] = saved[k].Name;
-            }
-        }
-
-        if (subs.Count == 0)
-            return ingredients;
-
-        return ingredients.Select(ing =>
-        {
-            if (subs.TryGetValue(ing.Name, out var replacement))
-                return ing with { Name = replacement, OriginalName = ing.Name };
-            return ing;
-        }).ToList();
-    }
-
-    private static string NormalizeName(string name) =>
-        name.Trim().ToLowerInvariant().Replace('ё', 'е');
-
-    [HttpGet("search")]
     public async Task<IActionResult> Search([FromQuery] string ingredients, [FromQuery] int limit = 10)
     {
         if (string.IsNullOrWhiteSpace(ingredients))
@@ -284,8 +225,8 @@ public class RecipesController : ControllerBase
 
         _logger.LogInformation("Recipe variant {VariantId} created from source {SourceId}", variant.Id, sourceId);
 
-        var variants = await GetVariantsAsync(variant);
-        return Ok(variant.ToDto(variants: variants));
+        var variants = await _repository.GetVariantsAsync(variant.SourceId ?? variant.Id);
+        return Ok(variant.ToDto(variants: variant.ToVariantDtos(variants)));
     }
 
     [HttpGet("{id:guid}/markdown")]

@@ -474,6 +474,11 @@
             pointer-events: none;
         }
 
+        .meal-plan-actions.is-busy {
+            opacity: 0.55;
+            pointer-events: none;
+        }
+
         .meal-card-header {
             display: flex;
             align-items: center;

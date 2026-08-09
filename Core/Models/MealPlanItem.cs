@@ -11,5 +11,4 @@ public class MealPlanItem
     public Recipe Recipe { get; set; }
     public MealType MealType { get; set; }
     public int Portions { get; set; } = 1;
-    public string? IngredientsJson { get; set; }
 }

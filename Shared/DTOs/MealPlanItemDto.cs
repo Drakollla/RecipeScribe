@@ -6,4 +6,5 @@ public record MealPlanItemDto(
     RecipeSummaryDto Recipe,
     int Portions,
     int Servings,
-    List<IngredientDto>? Ingredients = null);
+    List<IngredientDto>? Ingredients = null,
+    List<RecipeVariantDto>? Variants = null);
