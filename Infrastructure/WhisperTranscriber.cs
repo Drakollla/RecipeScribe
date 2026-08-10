@@ -26,10 +26,11 @@ public class WhisperTranscriber : ITranscriber
 
         await EnsureModelAsync(ct);
 
-        string wavPath = await ConvertToWavAsync(audioFilePath, ct);
+        string wavPath = Path.ChangeExtension(audioFilePath, ".wav");
 
         try
         {
+            await ConvertToWavAsync(audioFilePath, ct);
             return await TranscribeWavAsync(wavPath, ct);
         }
         finally

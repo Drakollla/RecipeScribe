@@ -158,7 +158,8 @@ public class YouTubeDownloader : IVideoDownloader
 
         var threshold = DateTime.UtcNow.AddDays(-30);
         var files = Directory.GetFiles(path, "*.txt")
-            .Concat(Directory.GetFiles(path, "*.mp3"));
+            .Concat(Directory.GetFiles(path, "*.mp3"))
+            .Concat(Directory.GetFiles(path, "*.wav"));
 
         foreach (var file in files)
         {

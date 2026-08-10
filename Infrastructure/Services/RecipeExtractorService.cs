@@ -43,37 +43,45 @@ public class RecipeExtractorService : IRecipeExtractorService
         var metadata = await _downloader.DownloadAudioAsync(url, cancellationToken);
         List<Recipe> recipes = new();
 
-        if (!string.IsNullOrWhiteSpace(metadata.Description) && metadata.Description.Length > 100)
+        try
         {
-            if (onProgress != null)
-                await onProgress("Видео загружено. Пробую найти рецепт в описании...");
+            if (!string.IsNullOrWhiteSpace(metadata.Description) && metadata.Description.Length > 100)
+            {
+                if (onProgress != null)
+                    await onProgress("Видео загружено. Пробую найти рецепт в описании...");
 
-            recipes = await TryParseRecipesAsync(metadata.Description, cancellationToken);
+                recipes = await TryParseRecipesAsync(metadata.Description, cancellationToken);
+            }
+
+            if (recipes.Count == 0)
+            {
+                if (onProgress != null)
+                    await onProgress("Рецепт в описании не найден. Проверяю закрепленный комментарий...");
+
+                string? firstComment = await _downloader.GetFirstCommentAsync(url, cancellationToken);
+
+                if (!string.IsNullOrWhiteSpace(firstComment))
+                    recipes = await TryParseRecipesAsync(firstComment, cancellationToken);
+            }
+
+            if (recipes.Count == 0)
+            {
+                string transcript = await GetOrCreateTranscriptAsync(metadata, onProgress, cancellationToken);
+
+                if (onProgress != null)
+                    await onProgress("Распознавание завершено. Форматирую рецепты через ИИ...");
+
+                recipes = await TryParseRecipesAsync(transcript, cancellationToken);
+            }
+
+            foreach (var recipe in recipes)
+                await SaveRecipeAsync(recipe, url, metadata.Title);
         }
-
-        if (recipes.Count == 0)
+        finally
         {
-            if (onProgress != null)
-                await onProgress("Рецепт в описании не найден. Проверяю закрепленный комментарий...");
-
-            string? firstComment = await _downloader.GetFirstCommentAsync(url, cancellationToken);
-
-            if (!string.IsNullOrWhiteSpace(firstComment))
-                recipes = await TryParseRecipesAsync(firstComment, cancellationToken);
+            if (!string.IsNullOrEmpty(metadata.AudioFilePath) && File.Exists(metadata.AudioFilePath))
+                File.Delete(metadata.AudioFilePath);
         }
-
-        if (recipes.Count == 0)
-        {
-            string transcript = await GetOrCreateTranscriptAsync(metadata, onProgress, cancellationToken);
-
-            if (onProgress != null)
-                await onProgress("Распознавание завершено. Форматирую рецепты через ИИ...");
-
-            recipes = await TryParseRecipesAsync(transcript, cancellationToken);
-        }
-
-        foreach (var recipe in recipes)
-            await SaveRecipeAsync(recipe, url, metadata.Title);
 
         return recipes;
     }
@@ -93,14 +101,11 @@ public class RecipeExtractorService : IRecipeExtractorService
 
             string transcript = await _transcriber.TranscribeAsync(metadata.AudioFilePath, ct);
 
-        string directory = Path.GetDirectoryName(metadata.AudioFilePath)!;
-        string fileName = Path.GetFileNameWithoutExtension(metadata.AudioFilePath);
-        string transcriptPath = Path.Combine(directory, $"{fileName}.txt");
+        string audioFileName = Path.GetFileName(metadata.AudioFilePath);
+        string videoId = audioFileName.StartsWith("audio_") ? audioFileName["audio_".Length..] : Path.GetFileNameWithoutExtension(audioFileName);
+        string transcriptPath = Path.Combine(Path.GetDirectoryName(metadata.AudioFilePath)!, $"{videoId}.txt");
 
         await File.WriteAllTextAsync(transcriptPath, transcript, Encoding.UTF8);
-
-        if (File.Exists(metadata.AudioFilePath))
-            File.Delete(metadata.AudioFilePath);
 
         return transcript;
     }
