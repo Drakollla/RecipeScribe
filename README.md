@@ -1,85 +1,81 @@
-Проект предназначен для автоматического извлечения рецептов из шортсов на YouTube, пересчета порций, планирования меню и экспорта рецептов в формат `*.md` (например, для базы знаний Obsidian).
+# RecipeScribe
 
-## Быстрый старт (Запуск через Web UI)
+Автоматическое извлечение рецептов из YouTube (описание → закреплённый комментарий → транскрибация Whisper → структурирование LLM). Основной (и рекомендуется) интерфейс — Web UI.
 
-Для полноценной работы веб-интерфейса достаточно запустить только бэкенд-API.
+## Быстрый старт (Web UI)
 
+Достаточно одного API-процесса:
 ```powershell
 dotnet build RecipeScribe.sln
+dotnet run --project RecipeScribe\RecipeScribeApi
 ```
+
+Откройте http://localhost:5074/.
+
+## База данных (миграции SQLite)
+
+Команды EF выполняются **из каталога `RecipeScribeApi`**:
 
 ```powershell
-# Терминал 1 — API (порт 5074)
-dotnet run --project RecipeScribe\RecipeScribeApi
-
-# Терминал 2 — Telegram бот, если решите запустить другой клиент 
-dotnet run --project RecipeScribe\TelegramBot
+cd RecipeScribe\RecipeScribeApi
+dotnet ef database update --project ..\Infrastructure --startup-project .
 ```
 
-2. Применение миграций базы данных (SQLite)
+Если `dotnet-ef` (8.0.28) не установлен: `dotnet tool restore` из корня решения.
 
-Примените миграции для создания локальной базы данных:
+## Конфигурация
 
-```
-dotnet ef database update --project RecipeScribe\Infrastructure --startup-project RecipeScribe\RecipeScribeApi
-```
+Переименуйте `RecipeScribeApi/appsettings.example.json` в `RecipeScribeApi/appsettings.json`. Ключи в - `dotnet user-secrets`:
 
-3. Настройка секретов
-
-Для работы экстракции рецептов необходимо настроить API-ключ вашей LLM-модели. Выберите один из двух способов:
-Вариант А. Через секреты dotnet (Рекомендуется, если планируете пушить код в Git)
-Настройки сохраняются локально вне папки проекта в общем хранилище UserSecrets:
-
-```
-dotnet user-secrets set "ApiKeys:Llm" "<ваш-llm-key>"
+```powershell
+dotnet user-secrets set "ApiKeys:Llm" "<llm-key>"
 ```
 
-Вариант Б. Напрямую в конфигурации (Проще для быстрого локального старта)
-Если вы не планируете публиковать проект, можете просто прописать ключ в файле RecipeScribeApi/appsettings.json:
+## Справочник по конфигу (appsettings.json)
 
-```JSON
-"ApiKeys": {
-  "Llm": "<ваш-llm-key>"
+```jsonc
+{
+  // Copy this file to appsettings.json and fill in your values.
+  // Real keys should go to dotnet user-secrets instead of the tracked file:
+  //   dotnet user-secrets set "ApiKeys:Llm" "<llm-key>"
+  "ConnectionStrings": {
+    "DefaultConnection": "Data Source=RecipeScribe.db"
+  },
+  "ApiKeys": {
+    "Llm": "",
+    "Telegram": ""
+  },
+  "LlmSettings": {
+    // Any OpenAI-compatible endpoint. Examples:
+    //   Ollama: http://localhost:11434/v1
+    "Endpoint": "",
+    // IMPORTANT: the recipe parser asks the model to return a JSON array with
+    // ALL recipes found in one video. Models with a small output budget will
+    // truncate the response and drop recipes. Use one with a large output
+    // limit (verified: openai/gpt-oss-120b on Groq).
+    "ModelId": "",
+    // Language for recipes, scaling and substitutions.
+    "TargetLanguage": "Russian"
+  }
 }
 ```
 
-Проект настроен на работу с Ollama (или полностью Ollama-совместимыми / OpenAI-совместимыми) эндпоинтами.
+Файл может содержать `//`-комментарии — и `AddJsonFile`, и переключение профилей их допускают. Профили LLM (эндпоинт + modelId) хранятся отдельными JSON-файлами и управляются из вкладки «Настройки» Web UI — активный профиль записывается в `LlmSettings` и применяется без перезапуска.
 
-4. Запуск API
+## Архитектура
 
-Запустите веб-интерфейс API (по умолчанию он слушает порт 5074):
+| Проект             | Роль                                                                                                                |
+| :----------------- | :------------------------------------------------------------------------------------------------------------------ |
+| **RecipeScribeApi** | ASP.NET Web API + одностраничный Web UI (`wwwroot`). Контроллеры, middleware (rate limiting, обработка ошибок), Serilog. |
+| **Infrastructure** | Интеграции: LLM (Groq / OpenAI / Ollama, retry-логика), Whisper, `yt-dlp`, EF Core + SQLite, миграции.                |
+| **Shared**         | DTO — формат обмена между API и Web UI.                                                                             |
+| **Core**           | Доменная область: сущности EF, контракты, перечисления, исключения (без внешних зависимостей).                      |
 
-```
-dotnet run --project RecipeScribe\RecipeScribeApi
-```
-
-5. Запуск Web UI
-
-Откройте Web UI в браузере. Локальный клиент автоматически настроен на отправку
-запросов к API на адрес http://localhost:5074.
-
-## Архитектура проекта
-
-| Проект              | Роль                                                                                                                           |
-| :------------------ | :----------------------------------------------------------------------------------------------------------------------------- |
-| **RecipeScribeApi** | ASP.NET Web API (контроллеры, интеграция Serilog, глобальный обработчик исключений через middleware).                          |
-| **Infrastructure**  | Ядро интеграций: работа с LLM (Semantic Kernel), Whisper для транскрибации, утилита `yt-dlp` для скачивания, EF Core + SQLite. |
-| **Shared**          | Общие контракты данных (DTO) для взаимодействия между API, ботом и фронтендом.                                                 |
-| **Core**            | Чистая доменная область: сущности, интерфейсы контрактов и перечисления (не имеет внешних зависимостей).                       |
 
 ## Как работает экстракция рецептов
 
-Когда вы отправляете ссылку на видео, система пытается получить текст рецепта
-наиболее оптимальным путем с минимальными затратами ресурсов:
+1. **Описание видео** — если содержит текст длиннее 100 символов, отправляется в LLM для структурирования.
+2. **Закреплённый комментарий** — если описания нет, сканируются закреплённые комментарии автора.
+3. **Аудио-транскрибация (Whisper)** — если текста нет вообще: `yt-dlp` скачивает аудиодорожку → Whisper распознаёт речь → LLM собирает пошаговый рецепт.
 
-1.  Описание видео — в первую очередь проверяется описание под видео. Если оно
-    содержит текст длиннее 100 символов, он отправляется в LLM для
-    структурирования.
-2.  Закрепленный комментарий — если в описании рецепта нет, алгоритм сканирует
-    закрепленные комментарии автора видео.
-3.  Аудио-транскрибация (Whisper) — если текстового описания нет вообще,
-    запускается фоновый процесс: скачивается аудиодорожка через yt-dlp ➔
-    обрабатывается моделью распознавания речи Whisper ➔ полученный текст
-    структурируется с помощью LLM в готовый пошаговый рецепт.
-
-    Также в решении присутствует проект TelegramBot (фоновый воркер Telegram), который при желании можно запустить параллельно в качестве альтернативного чат-клиента.
+Инструменты (Whisper, yt-dlp, ffmpeg) скачиваются автоматически при первом извлечении в папку `Core/Tools/`.
