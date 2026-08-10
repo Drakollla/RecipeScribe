@@ -282,23 +282,33 @@
         }
 
         // ===== LLM-профили (подключение модели через UI) =====
-        async function loadLlmProfiles() {
+        // Оптимистичное переключение активного LLM-профиля, пока конфиг не перечитан
+        var llmActiveOverride = null;
+
+        async function loadLlmProfiles(silent) {
             var section = document.getElementById('llmProfilesSection');
             if (!section) return;
 
-            section.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Загрузка LLM-профилей...</p>';
-            try {
-                const r = await fetch('/api/llm/profiles');
-                if (!r.ok) throw new Error((await r.json()).error || 'Ошибка');
-                const data = await r.json();
+            if (!silent) section.innerHTML = '<p style="color:var(--text-muted);font-size:13px;">Загрузка LLM-профилей...</p>';
+        try {
+            const r = await fetch('/api/llm/profiles');
+            if (!r.ok) throw new Error((await r.json()).error || 'Ошибка');
+            const data = await r.json();
 
-                var active = data.active || {};
-                var activeName = null;
+            var active = data.active || {};
+            var activeName = null;
+            if (llmActiveOverride) {
+                (data.profiles || []).forEach(function (p) {
+                    if (p.name === llmActiveOverride) activeName = p.name;
+                });
+            }
+            if (!activeName) {
                 (data.profiles || []).forEach(function (p) {
                     if (p.endpoint === active.endpoint && p.modelId === active.modelId) {
                         activeName = p.name;
                     }
                 });
+            }
 
                 var html =
                     '<h3 style="margin:0 0 4px 0;">Подключение модели (LLM)</h3>' +
@@ -338,7 +348,6 @@
         }
 
         async function activateLlmProfile(name) {
-            if (!confirm('Активировать профиль "' + name + '"?')) return;
             try {
                 const r = await fetch('/api/llm/profiles/active', {
                     method: 'PATCH',
@@ -346,7 +355,8 @@
                     body: JSON.stringify({ name: name })
                 });
                 if (!r.ok) throw new Error((await r.json()).error || 'Ошибка');
-                loadLlmProfiles();
+                llmActiveOverride = name;
+                loadLlmProfiles(true);
             } catch (e) {
                 alert('Ошибка: ' + e.message);
             }
@@ -377,7 +387,7 @@
                 document.getElementById('llmProfileEndpoint').value = '';
                 document.getElementById('llmProfileModel').value = '';
                 setTimeout(function () { msgEl.innerText = ''; }, 3000);
-                loadLlmProfiles();
+                loadLlmProfiles(true);
             } catch (e) {
                 msgEl.innerText = '✗ ' + e.message;
                 msgEl.style.color = '#f44336';
@@ -389,7 +399,7 @@
             try {
                 const r = await fetch('/api/llm/profiles/' + encodeURIComponent(name), { method: 'DELETE' });
                 if (!r.ok) throw new Error((await r.json()).error || 'Ошибка');
-                loadLlmProfiles();
+                loadLlmProfiles(true);
             } catch (e) {
                 alert('Ошибка: ' + e.message);
             }

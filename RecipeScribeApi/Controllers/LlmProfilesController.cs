@@ -77,14 +77,20 @@ public class LlmProfilesController : ControllerBase
 
         UpdateAppSettings(profile);
 
-        return Ok();
+        return Ok(new LlmProfileDto(profile.Name, profile.Endpoint, profile.ModelId));
     }
 
     private void UpdateAppSettings(LlmProfile profile)
     {
         var settingsPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
 
-        var json = JsonNode.Parse(System.IO.File.ReadAllText(settingsPath)) as JsonObject
+        var json = JsonNode.Parse(
+                System.IO.File.ReadAllText(settingsPath),
+                documentOptions: new JsonDocumentOptions
+                {
+                    CommentHandling = JsonCommentHandling.Skip,
+                    AllowTrailingCommas = true
+                }) as JsonObject
             ?? throw new InvalidOperationException("Could not read appsettings.json.");
 
         var llmSection = json["LlmSettings"] as JsonObject ?? new JsonObject();
