@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ITranscriber, WhisperTranscriber>();
         services.AddTransient<IRecipeExporter, MarkdownRecipeExporter>();
         services.AddTransient<IScalingService, ScalingService>();
+        services.AddSingleton<ILlmProfileStore, LlmProfileStore>();
 
         services.AddScoped<IMealPlanRepository, MealPlanRepository>();
         services.AddScoped<IMealPlannerService, MealPlannerService>();
