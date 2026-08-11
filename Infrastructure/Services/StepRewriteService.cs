@@ -1,11 +1,12 @@
-using System.Text.Json;
 using Core.Contracts;
 using Core.Models;
+using Core.ValueObjects;
 using Infrastructure.Helpers;
 using Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
+using System.Text.Json;
 
 namespace Infrastructure.Services;
 
@@ -22,32 +23,17 @@ public class StepRewriteService : IStepRewriter
         _logger = logger;
     }
 
-    public async Task<List<RecipeStep>> RewriteStepsAsync(
-        string ingredient,
-        string replacement,
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+    public async Task<StepRewriteResult> RewriteStepsAsync(
+        IReadOnlyList<IngredientSubstitution> substitutions,
         string recipeTitle,
         IReadOnlyList<string>? otherIngredients,
         IReadOnlyList<string>? stepDescriptions,
+        IReadOnlyList<PreparationTip>? preparationTips,
         CancellationToken cancellationToken = default)
     {
-        string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "IngredientStepRewriter.md");
-        string promptTemplate = await File.ReadAllTextAsync(promptPath, cancellationToken);
-
-        string otherList = otherIngredients is { Count: > 0 }
-            ? string.Join(", ", otherIngredients.Distinct())
-            : "—";
-
-        string allSteps = stepDescriptions is { Count: > 0 }
-            ? string.Join("\n", stepDescriptions.Select((s, i) => $"{i + 1}. {s}"))
-            : "—";
-
-        string prompt = promptTemplate
-            .Replace("{ingredient}", ingredient)
-            .Replace("{replacement}", replacement)
-            .Replace("{recipeTitle}", recipeTitle)
-            .Replace("{otherIngredients}", otherList)
-            .Replace("{allSteps}", allSteps)
-            .Replace("{targetLanguage}", _llmSettings.TargetLanguage);
+        var prompt = await BuildPromptAsync(substitutions, recipeTitle, otherIngredients, stepDescriptions, preparationTips, cancellationToken);
 
         var executionSettings = new OpenAIPromptExecutionSettings
         {
@@ -55,17 +41,70 @@ public class StepRewriteService : IStepRewriter
         };
 
         var result = await LlmRetryHelper.CallWithRetryAsync(_kernel, prompt, executionSettings, _logger, "Переписать шаги", cancellationToken);
-        var json = JsonTextCleaner.StripCodeFence(result);
 
+        return ParseResult(JsonTextCleaner.StripCodeFence(result));
+    }
+
+    private async Task<string> BuildPromptAsync(
+        IReadOnlyList<IngredientSubstitution> substitutions,
+        string recipeTitle,
+        IReadOnlyList<string>? otherIngredients,
+        IReadOnlyList<string>? stepDescriptions,
+        IReadOnlyList<PreparationTip>? preparationTips,
+        CancellationToken cancellationToken)
+    {
+        string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "IngredientStepRewriter.md");
+        string template = await File.ReadAllTextAsync(promptPath, cancellationToken);
+
+        return template
+            .Replace("{substitutions}", FormatSubstitutions(substitutions))
+            .Replace("{recipeTitle}", recipeTitle)
+            .Replace("{otherIngredients}", Join(otherIngredients))
+            .Replace("{allSteps}", FormatNumberedList(stepDescriptions))
+            .Replace("{allTips}", FormatTips(preparationTips))
+            .Replace("{targetLanguage}", _llmSettings.TargetLanguage);
+    }
+
+    private static string FormatSubstitutions(IReadOnlyList<IngredientSubstitution> substitutions) =>
+        string.Join("\n", substitutions.Select(s => $"- {s.Ingredient} → {s.Replacement}"));
+
+    private static string Join(IReadOnlyList<string>? items) =>
+        items is { Count: > 0 }
+            ? string.Join(", ", items.Distinct())
+            : "—";
+
+    private static string FormatNumberedList(IReadOnlyList<string>? items) =>
+        items is { Count: > 0 }
+            ? string.Join("\n", items.Select((s, i) => $"{i + 1}. {s}"))
+            : "—";
+
+    private static string FormatTips(IReadOnlyList<PreparationTip>? tips) =>
+        tips is { Count: > 0 }
+            ? string.Join("\n", tips.Select((t, i) => $"{i + 1}. {t.Ingredient}: {t.Tip}"))
+            : "—";
+
+    private StepRewriteResult ParseResult(string json)
+    {
         try
         {
-            var steps = JsonSerializer.Deserialize<List<RecipeStep>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            return steps ?? new List<RecipeStep>();
+            var parsed = JsonSerializer.Deserialize<StepRewriteResult>(json, JsonOptions);
+
+            if (parsed is { Steps.Count: > 0 })
+                return parsed;
         }
-        catch (JsonException ex)
+        catch (JsonException) { }
+
+        var stepsArray = JsonTextCleaner.ExtractArrayMember(json, "steps");
+
+        if (stepsArray != null)
         {
-            _logger.LogWarning(ex, "Failed to parse rewritten steps JSON: {Json}", json);
-            return new List<RecipeStep>();
+            var recoveredSteps = JsonSerializer.Deserialize<List<RecipeStep>>(stepsArray, JsonOptions);
+
+            if (recoveredSteps is { Count: > 0 })
+                return new StepRewriteResult(recoveredSteps, null);
         }
+
+        _logger.LogWarning("Failed to parse rewritten steps JSON: {Json}", json);
+        return new StepRewriteResult(new List<RecipeStep>(), null);
     }
 }

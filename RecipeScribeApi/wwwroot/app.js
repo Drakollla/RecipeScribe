@@ -71,6 +71,7 @@
 
                 st.recipeId = item.recipe.id;
                 st.ingredients = item.ingredients || [];
+                st.substitutions = [];
                 st.modified = false;
                 if (st.item) {
                     st.item.recipe = item.recipe;
@@ -101,6 +102,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             recipeViewState.variantTitle = recipe.variantTitle || null;
             recipeViewState.menuItemId = menuItemId || null;
             recipeViewState.modified = false;
+            recipeViewState.substitutions = [];
         }
 
         // Переключение на редакцию рецепта по чипу
@@ -119,16 +121,25 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             var ingredients = (recipeViewState.ingredients || []).map(function (i) {
                 return { name: i.name, amount: i.amount || '' };
             });
-            var steps = (recipeViewState.steps || []).map(function (s) {
-                return { number: s.number, description: s.description };
-            });
 
             showLoading();
             try {
+                var steps = recipeViewState.steps || [];
+                var tips = (recipeViewState.recipe && recipeViewState.recipe.preparationTips) || null;
+                if (recipeViewState.substitutions && recipeViewState.substitutions.length) {
+                    var rewritten = await batchRewriteSteps(recipeViewState.id, recipeViewState.substitutions);
+                    if (rewritten) {
+                        if (rewritten.steps.length) steps = rewritten.steps;
+                        if (rewritten.tips) tips = rewritten.tips;
+                    }
+                }
+
+                var stepsForVariant = steps.map(function (s) { return { number: s.number, description: s.description }; });
+
                 const r = await fetch('/api/recipes/' + recipeViewState.id + '/variants', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ variantTitle: title, ingredients: ingredients, steps: steps })
+                    body: JSON.stringify({ variantTitle: title, ingredients: ingredients, steps: stepsForVariant, preparationTips: tips })
                 });
                 hideLoading();
                 if (!r.ok) throw new Error('Не удалось сохранить вариант');
@@ -715,7 +726,8 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                     portions: i.portions,
                     ingredients: ingredients,
                     item: i,
-                    modified: false
+                    modified: false,
+                    substitutions: []
                 };
 
                 html += buildMealCardHtml(i, itemId);
@@ -797,12 +809,22 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                 const recipe = await res.json();
 
                 var ingredients = (st.ingredients || []).map(function (x) { return { name: x.name, amount: x.amount || '' }; });
-                var steps = (recipe.steps || []).map(function (s) { return { number: s.number, description: s.description }; });
+
+                var steps = recipe.steps || [];
+                var tips = recipe.preparationTips || null;
+                if (st.substitutions && st.substitutions.length) {
+                    var rewritten = await batchRewriteSteps(st.recipeId, st.substitutions);
+                    if (rewritten) {
+                        if (rewritten.steps.length) steps = rewritten.steps;
+                        if (rewritten.tips) tips = rewritten.tips;
+                    }
+                }
+                var stepsForVariant = (steps || []).map(function (s) { return { number: s.number, description: s.description }; });
 
                 const r = await fetch('/api/recipes/' + st.recipeId + '/variants', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ variantTitle: title, ingredients: ingredients, steps: steps })
+                    body: JSON.stringify({ variantTitle: title, ingredients: ingredients, steps: stepsForVariant, preparationTips: tips })
                 });
                 if (!r.ok) throw new Error('Не удалось сохранить вариант');
                 const created = await r.json();
@@ -1144,8 +1166,9 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
 
             var originalFromRecipe = originalName;
 
-            // Замена на карточке меню — обновляем состояние пункта меню и включаем режим «изменён»
-            if (substituteMenuItemId && menuViewState[substituteMenuItemId]) {
+            // Замена на карточке меню — обновляем состояние пункта меню и включаем режим «изменён».
+                // Шаги и советы переписываются ОДНИМ LLM-вызовом позже, при «Сохранить как вариант».
+                if (substituteMenuItemId && menuViewState[substituteMenuItemId]) {
                 var st = menuViewState[substituteMenuItemId];
                 (st.ingredients || []).forEach(function (ing) {
                     if (ing.name === originalName && ing.originalName) originalFromRecipe = ing.originalName;
@@ -1157,6 +1180,10 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                     }
                 });
                 st.modified = true;
+                st.substitutions = st.substitutions || [];
+                var mi = st.substitutions.findIndex(function (x) { return x.original === originalFromRecipe; });
+                if (mi >= 0) st.substitutions[mi].replacement = newName;
+                else st.substitutions.push({ original: originalFromRecipe, replacement: newName });
                 if (st.item) st.item.ingredients = st.ingredients.slice();
                 rerenderMealCard(substituteMenuItemId);
                 closeSubstitutePopover();
@@ -1185,29 +1212,14 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             // и когда рецепт открыт из меню (сохранить как вариант, затем переключить пункт меню)
             if (recipeViewState.id) {
                 recipeViewState.modified = true;
-                rewriteRecipeSteps(originalFromRecipe, newName);
+                recipeViewState.substitutions = recipeViewState.substitutions || [];
+                var si = recipeViewState.substitutions.findIndex(function (x) { return x.original === originalFromRecipe; });
+                if (si >= 0) recipeViewState.substitutions[si].replacement = newName;
+                else recipeViewState.substitutions.push({ original: originalFromRecipe, replacement: newName });
             }
 
             rerenderRecipeCard();
             closeSubstitutePopover();
-        }
-
-        // Overlay перезаписи рецепта на карточке
-        function showRecipeRewriteOverlay() {
-            var container = document.getElementById('resultsContainer');
-            if (!container || document.getElementById('recipeRewriteOverlay')) return;
-            var ov = document.createElement('div');
-            ov.className = 'recipe-rewrite-overlay';
-            ov.id = 'recipeRewriteOverlay';
-            ov.innerHTML = '<div class="rr-spinner"></div>' +
-                '<div class="rr-text">Переписываем шаги...</div>' +
-                '<div class="rr-sub">Рецепт будет обновлён автоматически</div>';
-            container.appendChild(ov);
-        }
-
-        function hideRecipeRewriteOverlay() {
-            var ov = document.getElementById('recipeRewriteOverlay');
-            if (ov) ov.remove();
         }
 
         // Перерисовка карточки рецепта из текущего состояния (после замены/перезаписи шагов)
@@ -1217,27 +1229,21 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             }
         }
 
-        // Точечная перегенерация шагов, где упоминается заменённый ингредиент
-        async function rewriteRecipeSteps(ingredient, replacement) {
-            showRecipeRewriteOverlay();
+        // Батч-перегенерация шагов и советов: один LLM-вызов по всем накопленным заменам.
+        // Возвращает { steps, tips } либо null при сбое.
+        async function batchRewriteSteps(recipeId, substitutions) {
+            if (!substitutions || !substitutions.length) return null;
             try {
-                const r = await fetch('/api/recipes/' + recipeViewState.id + '/rewrite-steps', {
+                const r = await fetch('/api/recipes/' + recipeId + '/rewrite-steps', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ingredient: ingredient, replacement: replacement })
+                    body: JSON.stringify({ substitutions: substitutions.map(function (s) { return { ingredient: s.original, replacement: s.replacement }; }) })
                 });
                 if (!r.ok) throw new Error('Не удалось переписать шаги');
                 const data = await r.json();
-
-                if (data.steps && data.steps.length) {
-                    recipeViewState.steps = data.steps;
-                    rerenderRecipeCard();
-                }
+                return { steps: data.steps || [], tips: data.tips || null };
             } catch (e) {
-                // Шаги остаются без изменений — это не критично
-            } finally {
-                hideRecipeRewriteOverlay();
-                hideLoading();
+                return null;
             }
         }
 

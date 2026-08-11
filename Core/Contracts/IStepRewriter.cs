@@ -1,14 +1,14 @@
-using Core.Models;
+using Core.ValueObjects;
 
 namespace Core.Contracts;
 
 public interface IStepRewriter
 {
-    Task<List<RecipeStep>> RewriteStepsAsync(
-        string ingredient,
-        string replacement,
+    Task<StepRewriteResult> RewriteStepsAsync(
+        IReadOnlyList<IngredientSubstitution> substitutions,
         string recipeTitle,
         IReadOnlyList<string>? otherIngredients,
         IReadOnlyList<string>? stepDescriptions,
+        IReadOnlyList<PreparationTip>? preparationTips,
         CancellationToken cancellationToken = default);
 }

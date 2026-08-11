@@ -3,10 +3,12 @@ using Core.Enums;
 using Core.Exceptions;
 using Core.Helpers;
 using Core.Models;
+using Core.ValueObjects;
 using Microsoft.AspNetCore.Mvc;
 using RecipeScribeApi.Mapping;
 using Shared.DTOs;
 using System.Text;
+using System.Text.Json;
 
 namespace RecipeScribeApi.Controllers;
 
@@ -61,12 +63,12 @@ public class RecipesController : ControllerBase
             throw new BadRequestException("Servings must be between 1 and 20.");
 
         List<Ingredient> baseIngredients;
+        
         if (targetServings != recipe.Servings)
             baseIngredients = await _scalingService.ScaleIngredientsAsync(recipe, targetServings, ct);
         else baseIngredients = recipe.Ingredients;
 
         var ingredients = baseIngredients.Select(i => new IngredientDto(i.Name, i.Amount)).ToList();
-
         var variants = await _repository.GetVariantsAsync(recipe.SourceId ?? recipe.Id);
         var variantDtos = recipe.ToVariantDtos(variants);
         var sourceRecipe = recipe.SourceId is null ? null : await _repository.GetSourceAsync(recipe.Id);
@@ -171,29 +173,63 @@ public class RecipesController : ControllerBase
         var recipe = await _repository.GetRecipeByIdAsync(id)
             ?? throw new RecipeNotFoundException(id);
 
-        var steps = await _stepRewriter.RewriteStepsAsync(
-            dto.Ingredient,
-            dto.Replacement,
+        var substitutions = dto.Substitutions
+            .Where(s => !string.IsNullOrWhiteSpace(s.Ingredient) && !string.IsNullOrWhiteSpace(s.Replacement))
+            .Select(s => new IngredientSubstitution(s.Ingredient.Trim(), s.Replacement.Trim()))
+            .ToList();
+
+        if (substitutions.Count == 0)
+            throw new BadRequestException("At least one substitution is required.");
+
+        var substitutedNames = substitutions.Select(s => s.Ingredient).ToList();
+        var tips = DeserializeTips(recipe.PreparationTips);
+        var result = await _stepRewriter.RewriteStepsAsync(
+            substitutions,
             recipe.Title,
             otherIngredients: recipe.Ingredients
-                .Where(i => !string.Equals(i.Name, dto.Ingredient, StringComparison.OrdinalIgnoreCase))
                 .Select(i => i.Name)
+                .Where(n => !substitutedNames.Any(x => string.Equals(x, n, StringComparison.OrdinalIgnoreCase)))
                 .ToList(),
             stepDescriptions: recipe.Steps
                 .OrderBy(s => s.Number)
                 .Select(s => s.Description)
-                .ToList());
+                .ToList(),
+            preparationTips: tips);
 
-        var result = recipe.Steps
+        var rewrittenSteps = result.Steps;
+
+        var mergedSteps = recipe.Steps
             .OrderBy(s => s.Number)
             .Select(s => new
             {
                 s.Number,
-                Description = steps.FirstOrDefault(x => x.Number == s.Number)?.Description ?? s.Description
+                Description = rewrittenSteps.FirstOrDefault(x => x.Number == s.Number)?.Description ?? s.Description
             })
             .ToList();
 
-        return Ok(new RewrittenStepsDto(result.Select(x => new RecipeStepDto(x.Number, x.Description)).ToList()));
+        var mergedTips = tips
+            .Select((t, i) => result.Tips is not null && i < result.Tips.Count && result.Tips[i] != null ? result.Tips[i] : t)
+            .Select(t => new PreparationTipDto(t.Ingredient, t.Tip))
+            .ToList();
+
+        return Ok(new RewrittenStepsDto(
+            mergedSteps.Select(x => new RecipeStepDto(x.Number, x.Description)).ToList(),
+            mergedTips.Count > 0 ? mergedTips : null));
+    }
+
+    private static List<PreparationTip> DeserializeTips(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new List<PreparationTip>();
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<PreparationTip>>(raw) ?? new List<PreparationTip>();
+        }
+        catch (JsonException)
+        {
+            return new List<PreparationTip>();
+        }
     }
 
     [HttpPost("{id:guid}/variants")]
@@ -215,7 +251,9 @@ public class RecipesController : ControllerBase
             IsLunch = recipe.IsLunch,
             IsDinner = recipe.IsDinner,
             IsSnack = recipe.IsSnack,
-            PreparationTips = recipe.PreparationTips,
+            PreparationTips = dto.PreparationTips is { Count: > 0 }
+                ? JsonSerializer.Serialize(dto.PreparationTips.Select(t => new PreparationTip { Ingredient = t.Ingredient, Tip = t.Tip }).ToList())
+                : recipe.PreparationTips,
             NutritionJson = recipe.NutritionJson,
             SourceId = sourceId,
             VariantTitle = string.IsNullOrWhiteSpace(variantTitle) ? "Вариант" : variantTitle,

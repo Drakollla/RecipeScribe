@@ -1,5 +1,8 @@
 namespace Shared.DTOs;
 
-public record RewriteStepsDto(
+public record IngredientReplacementDto(
     string Ingredient,
     string Replacement);
+
+public record RewriteStepsDto(
+    List<IngredientReplacementDto> Substitutions);
