@@ -19,8 +19,9 @@
             var html = '';
             ingredients.forEach(function (i) {
                 var cls = flash ? ' class="amount-flash"' : '';
+                var name = escapeHtml(i.name);
                 html += '<li>' +
-                    '<span class="ingredient-link" data-recipe="' + recipeViewState.id + '" data-ingredient="' + i.name.replace(/"/g, '&quot;') + '" onclick="substituteIngredient(this)">' + i.name + '</span>' +
+                    '<span class="ingredient-link" data-recipe="' + recipeViewState.id + '" data-ingredient="' + name + '" onclick="substituteIngredient(this)">' + name + '</span>' +
                     (i.amount ? ' — <strong' + cls + '>' + i.amount + '</strong>' : '') +
                     '</li>';
             });
@@ -856,8 +857,9 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
         function buildMenuIngredientItems(ingredients, itemId, recipeId) {
             var html = '';
             ingredients.forEach(function (i) {
+                var name = escapeHtml(i.name);
                 html += '<li>' +
-                    '<span class="ingredient-link" data-recipe="' + recipeId + '" data-ingredient="' + i.name.replace(/"/g, '&quot;') + '" onclick="substituteMenuIngredient(this, \'' + itemId + '\')">' + i.name + '</span>' +
+                    '<span class="ingredient-link" data-recipe="' + recipeId + '" data-ingredient="' + name + '" onclick="substituteMenuIngredient(this, \'' + itemId + '\')">' + name + '</span>' +
                     (i.amount ? ' — <strong>' + i.amount + '</strong>' : '') +
                     '</li>';
             });
@@ -1129,7 +1131,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             });
 
             html += '<div class="custom-variant">' +
-                '<input type="text" id="customSubstituteInput" placeholder="Свой вариант..." onkeydown="if(event.key===\'Enter\') selectCustomSubstitute()">' +
+                '<input type="text" id="customSubstituteInput" maxlength="100" placeholder="Свой вариант..." onkeydown="if(event.key===\'Enter\') selectCustomSubstitute()">' +
                 '<button onclick="selectCustomSubstitute()">OK</button>' +
                 '</div>';
 
@@ -1143,7 +1145,8 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
         function selectCustomSubstitute() {
             var input = document.getElementById('customSubstituteInput');
             var val = input.value.trim();
-            if (val) applySubstitution(val);
+            if (!val || val.length > 100) return;
+            applySubstitution(val);
         }
 
         function applySubstitution(newName) {
