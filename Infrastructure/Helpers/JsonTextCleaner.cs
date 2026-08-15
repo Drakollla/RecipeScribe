@@ -80,6 +80,27 @@ public static class JsonTextCleaner
         return lastObjectEnd == -1 ? null : text[..(lastObjectEnd + 1)] + "]";
     }
 
+    public static string? ExtractArrayMember(string json, string memberName)
+    {
+        int idx = json.IndexOf($"\"{memberName}\"", StringComparison.OrdinalIgnoreCase);
+        
+        if (idx < 0)
+            return null;
+
+        int colon = json.IndexOf(':', idx + memberName.Length + 2);
+        
+        if (colon < 0)
+            return null;
+
+        int open = json.IndexOf('[', colon);
+        
+        if (open < 0)
+            return null;
+
+        string tail = json[open..];
+        return ExtractBalancedJson(tail) ?? TruncateToLastCompleteObject(tail);
+    }
+
     private static int FindFirstOpeningBracket(string text)
     {
         int array = text.IndexOf('[');
@@ -121,7 +142,9 @@ public static class JsonTextCleaner
             else if (c == close)
             {
                 depth--;
-                if (depth == 0) return i;
+                
+                if (depth == 0)
+                    return i;
             }
         }
 

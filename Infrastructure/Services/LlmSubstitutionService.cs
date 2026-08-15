@@ -22,14 +22,31 @@ public class LlmSubstitutionService : IIngredientSubstitutor
         _logger = logger;
     }
 
-    public async Task<List<SubstitutionSuggestion>> GetSuggestionsAsync(string ingredient, string recipeTitle, CancellationToken cancellationToken = default)
+    public async Task<List<SubstitutionSuggestion>> GetSuggestionsAsync(
+        string ingredient,
+        string recipeTitle,
+        IReadOnlyList<string>? otherIngredients = null,
+        IReadOnlyList<string>? stepDescriptions = null,
+        CancellationToken cancellationToken = default)
     {
         string promptPath = Path.Combine(AppContext.BaseDirectory, "Prompts", "IngredientSubstituter.md");
         string promptTemplate = await File.ReadAllTextAsync(promptPath, cancellationToken);
 
+        string otherList = otherIngredients is { Count: > 0 }
+            ? string.Join(", ", otherIngredients.Distinct())
+            : "—";
+
+        string relevantSteps = stepDescriptions is { Count: > 0 }
+            ? string.Join("\n", stepDescriptions.Where(s => s.Contains(ingredient, StringComparison.OrdinalIgnoreCase)))
+            : "—";
+        if (string.IsNullOrWhiteSpace(relevantSteps))
+            relevantSteps = "—";
+
         string prompt = promptTemplate
             .Replace("{ingredient}", ingredient)
             .Replace("{recipeTitle}", recipeTitle)
+            .Replace("{otherIngredients}", otherList)
+            .Replace("{relevantSteps}", relevantSteps)
             .Replace("{targetLanguage}", _llmSettings.TargetLanguage);
 
         var executionSettings = new OpenAIPromptExecutionSettings

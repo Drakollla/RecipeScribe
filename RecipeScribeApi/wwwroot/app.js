@@ -2,7 +2,8 @@
         let portions = 2;
         let activeRecipeId = null;
         let previousStateHtml = null;
-        let recipeViewState = { id: null, portions: 1, ingredients: [], menuItemId: null };
+        let recipeViewState = { id: null, recipe: null, portions: 1, ingredients: [], steps: [], variants: [], sourceRecipe: null, sourceId: null, variantTitle: null, menuItemId: null, modified: false };
+        let currentRecipeObj = null;
         let menuViewState = {};
         let currentPlan = null;
         let goBackToMenu = false;
@@ -18,8 +19,9 @@
             var html = '';
             ingredients.forEach(function (i) {
                 var cls = flash ? ' class="amount-flash"' : '';
+                var name = escapeHtml(i.name);
                 html += '<li>' +
-                    '<span class="ingredient-link" data-recipe="' + recipeViewState.id + '" data-ingredient="' + i.name.replace(/"/g, '&quot;') + '" onclick="substituteIngredient(this)">' + i.name + '</span>' +
+                    '<span class="ingredient-link" data-recipe="' + recipeViewState.id + '" data-ingredient="' + name + '" onclick="substituteIngredient(this)">' + name + '</span>' +
                     (i.amount ? ' — <strong' + cls + '>' + i.amount + '</strong>' : '') +
                     '</li>';
             });
@@ -46,32 +48,118 @@
         // Пересчёт ингредиентов через LLM (для яиц/специй и т.п.)
         async function llmRescale() {
             if (!recipeViewState.id) return;
-            const itemId = recipeViewState.menuItemId;
-            await showRecipe(recipeViewState.id, recipeViewState.portions, itemId);
+            await showRecipe(recipeViewState.id, recipeViewState.portions);
+        }
 
-            // Рецепт открыт из меню — отражаем пересчёт в карточке и в БД
-            if (itemId && menuViewState[itemId]) {
-                const st = menuViewState[itemId];
-                st.portions = recipeViewState.portions;
-                st.ingredients = recipeViewState.ingredients.map(function (x) {
-                    return { name: x.name, amount: x.amount, originalName: x.originalName };
+        // Переключение рецепта в меню на вариант той же группы (PATCH item recipeId)
+        async function switchMenuRecipeVariant(itemId, recipeId) {
+            var st = menuViewState[itemId];
+            if (!st || st.busy) return;
+
+            st.busy = true;
+            var card = document.getElementById('mealCard_' + itemId);
+            if (card) card.classList.add('is-busy');
+            showLoading();
+
+            try {
+                const r = await fetch('/api/mealplans/items/' + itemId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ portions: st.portions, recipeId: recipeId })
                 });
+                if (!r.ok) throw new Error('Не удалось сменить вариант');
+                const item = await r.json();
 
+                st.recipeId = item.recipe.id;
+                st.ingredients = item.ingredients || [];
+                st.substitutions = [];
+                st.modified = false;
                 if (st.item) {
-                    st.item.portions = st.portions;
+                    st.item.recipe = item.recipe;
                     st.item.ingredients = st.ingredients.slice();
                 }
-                patchMenuItem(itemId, st);
+
+                rerenderMealCard(itemId);
+            } catch (e) {
+                alert(e.message);
+            } finally {
+                st.busy = false;
+                if (card) card.classList.remove('is-busy');
+                hideLoading();
             }
         }
 
-        function prepareRecipeView(recipe, portionsOverride, menuItemId) {
+function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             recipeViewState.id = recipe.id;
+            recipeViewState.recipe = recipe;
             // На старте показываем ингредиенты как сохранены (оригинальные количества).
-            // Число порций — целевое (дефолт из настроек или порции пункта меню).
+            // Число порций — целевое (default Recipes из порции пункта меню).
             recipeViewState.portions = (portionsOverride != null) ? portionsOverride : portions;
             recipeViewState.ingredients = recipe.ingredients;
+            recipeViewState.steps = recipe.steps;
+            recipeViewState.variants = recipe.variants || [];
+            recipeViewState.sourceRecipe = recipe.sourceRecipe || null;
+            recipeViewState.sourceId = recipe.sourceId || null;
+            recipeViewState.variantTitle = recipe.variantTitle || null;
             recipeViewState.menuItemId = menuItemId || null;
+            recipeViewState.modified = false;
+            recipeViewState.substitutions = [];
+            recipeViewState.savingVariant = false;
+        }
+
+        // Переключение на редакцию рецепта по чипу
+        function showRecipeVariant(id) {
+            if (id === recipeViewState.id) return;
+            showRecipe(id);
+        }
+
+        // Сохранение текущего (возможно изменённого) рецепта как отдельного варианта
+        async function saveAsVariant() {
+            if (!recipeViewState.id || recipeViewState.savingVariant) return;
+
+            var btn = document.querySelector('.recipe-modified-banner .action-btn');
+            if (btn) btn.disabled = true;
+
+            var title = prompt('Название варианта (например: "без сметаны"):');
+            if (title === null) {
+                if (btn) btn.disabled = false;
+                return;
+            }
+
+            recipeViewState.savingVariant = true;
+            var ingredients = (recipeViewState.ingredients || []).map(function (i) {
+                return { name: i.name, amount: i.amount || '' };
+            });
+
+            showLoading();
+            try {
+                var steps = recipeViewState.steps || [];
+                var tips = (recipeViewState.recipe && recipeViewState.recipe.preparationTips) || null;
+                if (recipeViewState.substitutions && recipeViewState.substitutions.length) {
+                    var rewritten = await batchRewriteSteps(recipeViewState.id, recipeViewState.substitutions);
+                    if (rewritten) {
+                        if (rewritten.steps.length) steps = rewritten.steps;
+                        if (rewritten.tips) tips = rewritten.tips;
+                    }
+                }
+
+                var stepsForVariant = steps.map(function (s) { return { number: s.number, description: s.description }; });
+
+                const r = await fetch('/api/recipes/' + recipeViewState.id + '/variants', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ variantTitle: title, ingredients: ingredients, steps: stepsForVariant, preparationTips: tips })
+                });
+                if (!r.ok) throw new Error('Не удалось сохранить вариант');
+                const created = await r.json();
+                showRecipe(created.id);
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            } finally {
+                recipeViewState.savingVariant = false;
+                if (btn) btn.disabled = false;
+                hideLoading();
+            }
         }
 
         // Загрузка настроек пользователя с сервера
@@ -515,6 +603,7 @@
                     if (Array.isArray(recipes)) {
                         if (recipes.length === 1) {
                             const recipe = recipes[0];
+                            currentRecipeObj = recipe;
                             activeRecipeId = recipe.id;
                             prepareRecipeView(recipe);
                             renderResults(renderRecipeHtml(recipe));
@@ -532,6 +621,7 @@
                         }
                     } else {
                         // fallback: single object (backward compat)
+                        currentRecipeObj = recipes;
                         activeRecipeId = recipes.id;
                         prepareRecipeView(recipes);
                         renderResults(renderRecipeHtml(recipes));
@@ -605,7 +695,7 @@
                     if (filtered.length > 0) {
                         let html = '<h2>Мои рецепты</h2><div class="recipe-list">';
                         filtered.forEach(recipe => {
-                            html += '<div class="recipe-item">' +
+                            html += '<div class="recipe-item" ondblclick="showRecipe(\'' + recipe.id + '\')">' +
                                 '<span class="recipe-item-title" onclick="showRecipe(\'' + recipe.id + '\')">' + recipe.title + '</span>' +
                                 '<div style="display:flex;align-items:center;gap:8px;">' +
                                 '<span style="cursor:pointer;font-size:16px;color:var(--text-muted);" onclick="showRecipe(\'' + recipe.id + '\')">➔</span>' +
@@ -657,7 +747,7 @@
                 if (data.length > 0) {
                     let html = '<h2>Сохраненные рецепты</h2><div class="recipe-list">';
                     data.forEach(recipe => {
-                        html += '<div class="recipe-item">' +
+                        html += '<div class="recipe-item" ondblclick="showRecipe(\'' + recipe.id + '\')">' +
                             '<span class="recipe-item-title" onclick="showRecipe(\'' + recipe.id + '\')">' + recipe.title + '</span>' +
                             '<div style="display:flex;align-items:center;gap:8px;">' +
                             '<span style="cursor:pointer;font-size:16px;color:var(--text-muted);" onclick="showRecipe(\'' + recipe.id + '\')">➔</span>' +
@@ -679,6 +769,36 @@
         // Отрисовка разметки рецепта
         function renderRecipeHtml(recipe) {
             let html = `<h2>${recipe.title}</h2>`;
+
+            // Панель действий сверху (иконки, подпись при наведении)
+            html += '<div class="top-action-bar">';
+            if (previousStateHtml) {
+                html += `<button class="icon-btn" onclick="goBack()" title="Назад">←</button>`;
+            } else {
+                html += `<button class="icon-btn" onclick="switchMode('recipes', document.getElementById('mode-recipes'))" title="Ко всем рецептам">🗂️</button>`;
+            }
+            html += `<button class="icon-btn" onclick="exportToObsidian('${recipe.id}')" title="Сохранить в Obsidian"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M19.355 18.538a68.967 68.959 0 0 0 1.858-2.954.81.81 0 0 0-.062-.9c-.516-.685-1.504-2.075-2.042-3.362-.553-1.321-.636-3.375-.64-4.377a1.707 1.707 0 0 0-.358-1.05l-3.198-4.064a3.744 3.744 0 0 1-.076.543c-.106.503-.307 1.004-.536 1.5-.134.29-.29.6-.446.914l-.31.626c-.516 1.068-.997 2.227-1.132 3.59-.124 1.26.046 2.73.815 4.481.128.011.257.025.386.044a6.363 6.363 0 0 1 3.326 1.505c.916.79 1.744 1.922 2.415 3.5zM8.199 22.569c.073.012.146.02.22.02.78.024 2.095.092 3.16.29.87.16 2.593.64 4.01 1.055 1.083.316 2.198-.548 2.355-1.664.114-.814.33-1.735.725-2.58l-.01.005c-.67-1.87-1.522-3.078-2.416-3.849a5.295 5.295 0 0 0-2.778-1.257c-1.54-.216-2.952.19-3.84.45.532 2.218.368 4.829-1.425 7.531zM5.533 9.938c-.023.1-.056.197-.098.29L2.82 16.059a1.602 1.602 0 0 0 .313 1.772l4.116 4.24c2.103-3.101 1.796-6.02.836-8.3-.728-1.73-1.832-3.081-2.55-3.831zM9.32 14.01c.615-.183 1.606-.465 2.745-.534-.683-1.725-.848-3.233-.716-4.577.154-1.552.7-2.847 1.235-3.95.113-.235.223-.454.328-.664.149-.297.288-.577.419-.86.217-.47.379-.885.46-1.27.08-.38.08-.72-.014-1.043-.095-.325-.297-.675-.68-1.06a1.6 1.6 0 0 0-1.475.36l-4.95 4.452a1.602 1.602 0 0 0-.513.952l-.427 2.83c.672.59 2.328 2.316 3.335 4.711.09.21.175.43.253.653z"/></svg></button>`;
+            html += '</div>';
+
+            // Помечено как изменённый рецепт — баннер с кнопкой «Сохранить как вариант»
+            if (recipeViewState.modified && !recipeViewState.sourceId) {
+                html += '<div class="recipe-modified-banner">' +
+                    '<span>✏️ Рецепт изменён</span>' +
+                    `<button class="action-btn" onclick="saveAsVariant()">➕ Сохранить как вариант</button>` +
+                    '</div>';
+            }
+
+            // Чипы-редакции (Оригинал + вариации группы)
+            var variants = recipe.variants || recipeViewState.variants || [];
+            if (variants && variants.length > 0) {
+                html += '<div class="recipe-variant-chips">';
+                variants.forEach(function (v) {
+                    var active = v.id === recipe.id ? ' active' : '';
+                    var label = v.variantTitle || 'Оригинал';
+                    html += '<span class="recipe-variant-chip' + active + '" onclick="showRecipeVariant(\'' + v.id + '\')">' + escapeHtml(label) + '</span>';
+                });
+                html += '</div>';
+            }
 
             html += '<div class="recipe-ingredients-header">' +
                 '<h3>Ингредиенты</h3>' +
@@ -731,22 +851,9 @@
                 html += '</ul>';
             }
 
-            html += '<h3>Инструкция по приготовлению</h3><ol>';
-            recipe.steps.forEach(s => { html += '<li>' + s.description + '</li>'; });
+            html += '<h3>Инструкция по приготовлению</h3><ol id="recipeStepsList">';
+            (recipeViewState.steps && recipeViewState.steps.length ? recipeViewState.steps : recipe.steps).forEach(function (s) { html += '<li>' + escapeHtml(s.description) + '</li>'; });
             html += '</ol>';
-
-            // Группа кнопок внизу
-            html += `<div class="btn-group">
-                        <button class="action-btn" onclick="exportToObsidian('${recipe.id}')">💾 Сохранить в Obsidian</button>`;
-
-            // Если есть сохраненный предыдущий экран (меню или поиск по продуктам) — выводим кнопку Назад
-            if (previousStateHtml) {
-                html += `<button class="action-btn secondary" onclick="goBack()">🔙 Назад</button>`;
-            } else {
-                html += `<button class="action-btn secondary" onclick="switchMode('recipes', document.getElementById('mode-recipes'))">🗂️ Ко всем рецептам</button>`;
-            }
-
-            html += `</div>`;
 
             return html;
         }
@@ -777,41 +884,144 @@
                     recipeId: i.recipe.id,
                     portions: i.portions,
                     ingredients: ingredients,
-                    item: i
+                    item: i,
+                    modified: false,
+                    substitutions: []
                 };
 
-                html += `<div class="meal-card" id="mealCard_${itemId}">
-                            <div class="meal-card-header">
-                                <span class="meal-type">${i.mealType}</span>
-                                <span class="meal-recipe-btn" onclick="openMenuRecipe('${itemId}')">${i.recipe.title}</span>
-                                <div class="meal-portions-widget" title="Пересчитать количество ингредиентов">
-                                    <span>🍽️</span>
-                                    <button class="portion-btn" onclick="menuPortionsChange('${itemId}', -1)">−</button>
-                                    <span class="meal-portions-value" id="menuPortionsVal_${itemId}">${i.portions}</span>
-                                    <button class="portion-btn" onclick="menuPortionsChange('${itemId}', 1)">+</button>
-                                    <button class="portion-btn meal-recalc-btn" onclick="llmMenuRescale('${itemId}')" title="Пересчитать ингредиенты">↻</button>
-                                </div>
-                            </div>
-                            <ul class="meal-ingredients" id="menuIngredients_${itemId}">${buildMenuIngredientItems(ingredients, itemId, i.recipe.id)}</ul>
-                         </div>`;
+                html += buildMealCardHtml(i, itemId);
             });
 
             html += '</div>';
 
             // Группа кнопок: список покупок и генерация нового меню
-            html += `<div class="btn-group">
+            html += `<div class="btn-group meal-plan-actions">
                         <button class="action-btn" onclick="showShoppingList('${plan.id}')">🛒 Список покупок</button>
                         <button class="action-btn secondary" onclick="regenerateMenu()">🔄 Сгенерировать заново</button>
                      </div>`;
             return html;
         }
 
-        // Отрисовка ингредиентов пункта меню (с кликом для замены через LLM)
+        // Отрисовка одной карточки меню: заголовок, варианты группы, баннер «изменён», ингредиенты
+        function buildMealCardHtml(item, itemId) {
+            var st = menuViewState[itemId] || {};
+            var portions = st.portions != null ? st.portions : item.portions;
+            var ingredients = (st.ingredients || item.ingredients || []);
+
+            var html = '<div class="meal-card" id="mealCard_' + itemId + '">';
+            html += '<div class="meal-card-header">' +
+                '<span class="meal-type">' + escapeHtml(item.mealType) + '</span>' +
+                '<span class="meal-recipe-btn" onclick="openMenuRecipe(\'' + itemId + '\')">' + escapeHtml(item.recipe.title) + '</span>' +
+                '<div class="meal-portions-widget" title="Пересчитать количество ингредиентов">' +
+                '<span>🍽️</span>' +
+                '<button class="portion-btn" onclick="menuPortionsChange(\'' + itemId + '\', -1)">−</button>' +
+                '<span class="meal-portions-value" id="menuPortionsVal_' + itemId + '">' + portions + '</span>' +
+                '<button class="portion-btn" onclick="menuPortionsChange(\'' + itemId + '\', 1)">+</button>' +
+                '<button class="portion-btn meal-recalc-btn" onclick="llmMenuRescale(\'' + itemId + '\')" title="Пересчитать ингредиенты">↻</button>' +
+                '</div></div>';
+
+            var variants = item.variants || [];
+            if (variants.length > 0) {
+                html += '<div class="recipe-variant-chips">';
+                variants.forEach(function (v) {
+                    var active = (v.id === item.recipe.id && !st.modified) ? ' active' : '';
+                    var label = escapeHtml(v.variantTitle || 'Оригинал');
+                    html += '<span class="recipe-variant-chip' + active + '" onclick="switchMenuRecipeVariant(\'' + itemId + '\', \'' + v.id + '\')">' + label + '</span>';
+                });
+                html += '</div>';
+            }
+
+            if (st.modified) {
+                html += '<div class="recipe-modified-banner">' +
+                    '<span>✏️ Рецепт изменён</span>' +
+                    '<button class="action-btn" onclick="saveMenuVariant(\'' + itemId + '\')">➕ Сохранить как вариант</button>' +
+                    '</div>';
+            }
+
+            html += '<ul class="meal-ingredients" id="menuIngredients_' + itemId + '">' +
+                buildMenuIngredientItems(ingredients, itemId, st.recipeId || item.recipe.id) +
+                '</ul>';
+            html += '</div>';
+            return html;
+        }
+
+        // Перерисовка одной карточки меню из её состояния
+        function rerenderMealCard(itemId) {
+            var st = menuViewState[itemId];
+            var card = document.getElementById('mealCard_' + itemId);
+            if (!st || !card) return;
+            card.outerHTML = buildMealCardHtml(st.item, itemId);
+        }
+
+        // Сохранение изменённого блюда карточки меню как варианта рецепта + переключение пункта на вариант
+        async function saveMenuVariant(itemId) {
+            var st = menuViewState[itemId];
+            if (!st || st.busy) return;
+
+            var title = prompt('Название варианта (например: "без сметаны"):');
+            if (title === null) return;
+
+            st.busy = true;
+            var card = document.getElementById('mealCard_' + itemId);
+            if (card) card.classList.add('is-busy');
+            showLoading();
+            try {
+                const res = await fetch('/api/recipes/' + st.recipeId + '?servings=' + st.portions);
+                if (!res.ok) throw new Error('Не удалось загрузить рецепт');
+                const recipe = await res.json();
+
+                var ingredients = (st.ingredients || []).map(function (x) { return { name: x.name, amount: x.amount || '' }; });
+
+                var steps = recipe.steps || [];
+                var tips = recipe.preparationTips || null;
+                if (st.substitutions && st.substitutions.length) {
+                    var rewritten = await batchRewriteSteps(st.recipeId, st.substitutions);
+                    if (rewritten) {
+                        if (rewritten.steps.length) steps = rewritten.steps;
+                        if (rewritten.tips) tips = rewritten.tips;
+                    }
+                }
+                var stepsForVariant = (steps || []).map(function (s) { return { number: s.number, description: s.description }; });
+
+                const r = await fetch('/api/recipes/' + st.recipeId + '/variants', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ variantTitle: title, ingredients: ingredients, steps: stepsForVariant, preparationTips: tips })
+                });
+                if (!r.ok) throw new Error('Не удалось сохранить вариант');
+                const created = await r.json();
+
+                const p = await fetch('/api/mealplans/items/' + itemId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ portions: st.portions, recipeId: created.id })
+                });
+                if (!p.ok) throw new Error('Не удалось применить вариант к пункту меню');
+                const updated = await p.json();
+
+                st.recipeId = updated.recipe.id;
+                st.ingredients = updated.ingredients || [];
+                st.modified = false;
+                if (st.item) {
+                    st.item.recipe = updated.recipe;
+                    st.item.ingredients = st.ingredients.slice();
+                }
+
+                rerenderMealCard(itemId);
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            } finally {
+                st.busy = false;
+                if (card) card.classList.remove('is-busy');
+                hideLoading();
+            }
+        }
         function buildMenuIngredientItems(ingredients, itemId, recipeId) {
             var html = '';
             ingredients.forEach(function (i) {
+                var name = escapeHtml(i.name);
                 html += '<li>' +
-                    '<span class="ingredient-link" data-recipe="' + recipeId + '" data-ingredient="' + i.name.replace(/"/g, '&quot;') + '" onclick="substituteMenuIngredient(this, \'' + itemId + '\')">' + i.name + '</span>' +
+                    '<span class="ingredient-link" data-recipe="' + recipeId + '" data-ingredient="' + name + '" onclick="substituteMenuIngredient(this, \'' + itemId + '\')">' + name + '</span>' +
                     (i.amount ? ' — <strong>' + i.amount + '</strong>' : '') +
                     '</li>';
             });
@@ -848,7 +1058,7 @@
             showLoading();
 
             try {
-                const r = await fetch(`/api/recipes/${st.recipeId}?servings=${st.portions}&itemId=${itemId}`);
+                const r = await fetch(`/api/recipes/${st.recipeId}?servings=${st.portions}`);
                 if (!r.ok) throw new Error('Не удалось пересчитать');
                 const recipe = await r.json();
 
@@ -912,12 +1122,13 @@
             activeRecipeId = id;
             try {
                 const url = servingsOverride != null
-                    ? `/api/recipes/${id}?servings=${servingsOverride}${menuItemId ? '&itemId=' + menuItemId : ''}`
-                    : `/api/recipes/${id}${menuItemId ? '?itemId=' + menuItemId : ''}`;
+                    ? `/api/recipes/${id}?servings=${servingsOverride}`
+                    : `/api/recipes/${id}`;
                 const r = await fetch(url);
                 if (!r.ok) throw new Error('Рецепт не найден');
                 const recipe = await r.json();
 
+                currentRecipeObj = recipe;
                 prepareRecipeView(recipe, servingsOverride, menuItemId);
 
                 hideLoading();
@@ -934,6 +1145,7 @@
         }
 
         async function exportToObsidian(id) {
+            showLoading();
             try {
                 const r = await fetch(`/api/recipes/${id}/export-to-obsidian?chatId=0`, { method: 'POST' });
                 const data = await r.json();
@@ -944,6 +1156,8 @@
                 }
             } catch (e) {
                 alert('Ошибка экспорта: ' + e.message);
+            } finally {
+                hideLoading();
             }
         }
 
@@ -978,11 +1192,15 @@
             }
         }
 
-        // Блокировка изменения карточек меню, пока собирается список покупок
+        // Блокировка изменения карточек меню и кнопок, пока собирается список покупок
         function setMenuLocked(locked) {
             document.querySelectorAll('.meal-card').forEach(function (card) {
                 if (locked) card.classList.add('is-busy');
                 else card.classList.remove('is-busy');
+            });
+            document.querySelectorAll('.meal-plan-actions').forEach(function (group) {
+                if (locked) group.classList.add('is-busy');
+                else group.classList.remove('is-busy');
             });
         }
 
@@ -1078,7 +1296,7 @@
             });
 
             html += '<div class="custom-variant">' +
-                '<input type="text" id="customSubstituteInput" placeholder="Свой вариант..." onkeydown="if(event.key===\'Enter\') selectCustomSubstitute()">' +
+                '<input type="text" id="customSubstituteInput" maxlength="100" placeholder="Свой вариант..." onkeydown="if(event.key===\'Enter\') selectCustomSubstitute()">' +
                 '<button onclick="selectCustomSubstitute()">OK</button>' +
                 '</div>';
 
@@ -1092,7 +1310,8 @@
         function selectCustomSubstitute() {
             var input = document.getElementById('customSubstituteInput');
             var val = input.value.trim();
-            if (val) applySubstitution(val);
+            if (!val || val.length > 100) return;
+            applySubstitution(val);
         }
 
         function applySubstitution(newName) {
@@ -1113,9 +1332,34 @@
                 substituteIngredientEl.classList.remove('flash-highlight');
             }, 600);
 
-            // Настоящее имя из рецепта, если текущее имя — уже применённая замена
             var originalFromRecipe = originalName;
-            if (!substituteMenuItemId && recipeViewState.ingredients) {
+
+            // Замена на карточке меню — обновляем состояние пункта меню и включаем режим «изменён».
+                // Шаги и советы переписываются ОДНИМ LLM-вызовом позже, при «Сохранить как вариант».
+                if (substituteMenuItemId && menuViewState[substituteMenuItemId]) {
+                var st = menuViewState[substituteMenuItemId];
+                (st.ingredients || []).forEach(function (ing) {
+                    if (ing.name === originalName && ing.originalName) originalFromRecipe = ing.originalName;
+                });
+                (st.ingredients || []).forEach(function (ing) {
+                    if (ing.name === originalName) {
+                        if (!ing.originalName) ing.originalName = originalFromRecipe;
+                        ing.name = newName;
+                    }
+                });
+                st.modified = true;
+                st.substitutions = st.substitutions || [];
+                var mi = st.substitutions.findIndex(function (x) { return x.original === originalFromRecipe; });
+                if (mi >= 0) st.substitutions[mi].replacement = newName;
+                else st.substitutions.push({ original: originalFromRecipe, replacement: newName });
+                if (st.item) st.item.ingredients = st.ingredients.slice();
+                rerenderMealCard(substituteMenuItemId);
+                closeSubstitutePopover();
+                return;
+            }
+
+            // Было ли это замена уже применённая ранее (originalName хранит исходное имя из рецепта)
+            if (recipeViewState.ingredients) {
                 (recipeViewState.ingredients || []).forEach(function (ri) {
                     if (ri.name === originalName && ri.originalName) originalFromRecipe = ri.originalName;
                 });
@@ -1123,7 +1367,7 @@
 
             // Синхронизируем состояние страницы рецепта, чтобы при повторных заменах
             // сохранялся исходный originalName (настоящее имя из рецепта)
-            if (!substituteMenuItemId && recipeViewState.ingredients) {
+            if (recipeViewState.ingredients) {
                 recipeViewState.ingredients.forEach(function (ri) {
                     if (ri.name === originalName) {
                         if (!ri.originalName) ri.originalName = originalFromRecipe;
@@ -1132,32 +1376,51 @@
                 });
             }
 
-            // Замена на карточке меню ИЛИ на странице рецепта, открытого из меню, —
-            // сохраняем в пункт меню (IngredientsJson), чтобы пережить перезапуск и пересчёт порций.
-            var targetItemId = substituteMenuItemId || recipeViewState.menuItemId;
-            if (targetItemId) {
-                var st = menuViewState[targetItemId];
-                if (st) {
-                    st.ingredients.forEach(function (ing) {
-                        if (ing.name === originalName || ing.originalName === originalName) {
-                            if (!ing.originalName) ing.originalName = originalFromRecipe;
-                            ing.name = newName;
-                        }
-                    });
-                    if (st.item) st.item.ingredients = st.ingredients.slice();
-                    patchMenuItem(targetItemId, st);
-                }
+            // Замена всегда переводит рецепт в режим «изменён» — и на странице рецепта,
+            // и когда рецепт открыт из меню (сохранить как вариант, затем переключить пункт меню)
+            if (recipeViewState.id) {
+                recipeViewState.modified = true;
+                recipeViewState.substitutions = recipeViewState.substitutions || [];
+                var si = recipeViewState.substitutions.findIndex(function (x) { return x.original === originalFromRecipe; });
+                if (si >= 0) recipeViewState.substitutions[si].replacement = newName;
+                else recipeViewState.substitutions.push({ original: originalFromRecipe, replacement: newName });
             }
 
+            rerenderRecipeCard();
             closeSubstitutePopover();
         }
 
-        // Сохранение порций и ингредиентов пункта меню в БД
+        // Перерисовка карточки рецепта из текущего состояния (после замены/перезаписи шагов)
+        function rerenderRecipeCard() {
+            if (recipeViewState.recipe) {
+                renderResults(renderRecipeHtml(recipeViewState.recipe));
+            }
+        }
+
+        // Батч-перегенерация шагов и советов: один LLM-вызов по всем накопленным заменам.
+        // Возвращает { steps, tips } либо null при сбое.
+        async function batchRewriteSteps(recipeId, substitutions) {
+            if (!substitutions || !substitutions.length) return null;
+            try {
+                const r = await fetch('/api/recipes/' + recipeId + '/rewrite-steps', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ substitutions: substitutions.map(function (s) { return { ingredient: s.original, replacement: s.replacement }; }) })
+                });
+                if (!r.ok) throw new Error('Не удалось переписать шаги');
+                const data = await r.json();
+                return { steps: data.steps || [], tips: data.tips || null };
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // Сохранение числа порций пункта в БД
         function patchMenuItem(itemId, st) {
             fetch(`/api/mealplans/items/${itemId}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ portions: st.portions, ingredients: st.ingredients })
+                body: JSON.stringify({ portions: st.portions })
             }).catch(function (e) { });
         }
 

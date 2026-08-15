@@ -16,8 +16,7 @@ public class RateLimitingMiddleware
         _logger = logger;
         _limitedPaths = new(StringComparer.OrdinalIgnoreCase)
         {
-            "/api/recipes/extract",
-            "/api/mealplans/generate"
+            "/api/recipes/extract"
         };
     }
 

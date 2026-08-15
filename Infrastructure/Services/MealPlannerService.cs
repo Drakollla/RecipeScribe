@@ -93,12 +93,12 @@ public class MealPlannerService : IMealPlannerService
     public async Task<MealPlan?> GetPlanForDateAsync(long telegramChatId, DateOnly date) =>
         await _repo.GetPlanForDateAsync(telegramChatId, date);
 
-    public async Task<MealPlanItem> UpdatePlanItemPortionsAsync(Guid planItemId, int portions, string? ingredientsJson)
+    public async Task<MealPlanItem> UpdatePlanItemAsync(Guid planItemId, int portions, Guid? recipeId = null)
     {
         if (portions is < 1 or > 20)
             throw new BadRequestException("Portions must be between 1 and 20.");
 
-        var item = await _repo.UpdatePlanItemPortionsAsync(planItemId, portions, ingredientsJson);
+        var item = await _repo.UpdatePlanItemAsync(planItemId, portions, recipeId);
 
         return item ?? throw new MealPlanItemNotFoundException(planItemId);
     }
@@ -131,18 +131,6 @@ public class MealPlannerService : IMealPlannerService
 
         foreach (var item in planItems)
         {
-            var savedIngredients = PlanItemIngredients.Deserialize(item.IngredientsJson);
-            
-            if (savedIngredients != null && savedIngredients.Count > 0)
-            {
-                scaledIngredients.AddRange(savedIngredients.Select(pi => new Ingredient
-                {
-                    Name = pi.Name,
-                    Amount = pi.Amount
-                }));
-                continue;
-            }
-
             var ingredients = await _scalingService.ScaleIngredientsAsync(item.Recipe, item.Portions);
             scaledIngredients.AddRange(ingredients);
         }

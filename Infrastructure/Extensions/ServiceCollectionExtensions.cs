@@ -56,6 +56,7 @@ public static class ServiceCollectionExtensions
 
         services.AddTransient<IRecipeParser, RecipeParser>();
         services.AddTransient<IIngredientSubstitutor, LlmSubstitutionService>();
+        services.AddTransient<IStepRewriter, StepRewriteService>();
 
         return services;
     }

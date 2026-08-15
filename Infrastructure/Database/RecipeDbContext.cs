@@ -30,6 +30,9 @@ public class RecipeDbContext : DbContext
             .HasForeignKey(s => s.RecipeId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<Recipe>()
+            .HasIndex(r => r.SourceId);
+
         modelBuilder.Entity<User>()
             .HasIndex(u => u.TelegramChatId)
             .IsUnique();

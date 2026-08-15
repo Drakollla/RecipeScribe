@@ -12,5 +12,9 @@ public record RecipeDto(
     List<IngredientDto> Ingredients,
     List<RecipeStepDto> Steps,
     List<PreparationTipDto>? PreparationTips,
-    NutritionDto? Nutrition
+    NutritionDto? Nutrition,
+    Guid? SourceId = null,
+    string? VariantTitle = null,
+    List<RecipeVariantDto>? Variants = null,
+    RecipeVariantDto? SourceRecipe = null
 );

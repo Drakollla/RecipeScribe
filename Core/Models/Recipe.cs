@@ -13,6 +13,8 @@ public class Recipe
     public string? PreparationTips { get; set; }
     public string? NutritionJson { get; set; }
     public DateTime? LastPlannedAt { get; set; }
+    public Guid? SourceId { get; set; }
+    public string? VariantTitle { get; set; }
     public List<Ingredient> Ingredients { get; set; } = new();
     public List<RecipeStep> Steps { get; set; } = new();
 }

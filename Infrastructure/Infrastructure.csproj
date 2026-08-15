@@ -30,6 +30,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="Prompts\IngredientStepRewriter.md">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="Prompts\IngredientScaler.md">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
