@@ -281,6 +281,15 @@ public class RecipesController : ControllerBase
         return Content(RecipeMarkdownBuilder.Build(recipe), "text/markdown", Encoding.UTF8);
     }
 
+    [HttpGet("{id:guid}/text")]
+    public async Task<IActionResult> GetPlainText(Guid id)
+    {
+        var recipe = await _repository.GetRecipeByIdAsync(id)
+            ?? throw new RecipeNotFoundException(id);
+
+        return Content(RecipeTextBuilder.Build(recipe), "text/plain", Encoding.UTF8);
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
