@@ -104,6 +104,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             recipeViewState.menuItemId = menuItemId || null;
             recipeViewState.modified = false;
             recipeViewState.substitutions = [];
+            recipeViewState.savingVariant = false;
         }
 
         // Переключение на редакцию рецепта по чипу
@@ -114,11 +115,18 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
 
         // Сохранение текущего (возможно изменённого) рецепта как отдельного варианта
         async function saveAsVariant() {
-            if (!recipeViewState.id) return;
+            if (!recipeViewState.id || recipeViewState.savingVariant) return;
+
+            var btn = document.querySelector('.recipe-modified-banner .action-btn');
+            if (btn) btn.disabled = true;
 
             var title = prompt('Название варианта (например: "без сметаны"):');
-            if (title === null) return;
+            if (title === null) {
+                if (btn) btn.disabled = false;
+                return;
+            }
 
+            recipeViewState.savingVariant = true;
             var ingredients = (recipeViewState.ingredients || []).map(function (i) {
                 return { name: i.name, amount: i.amount || '' };
             });
@@ -142,14 +150,15 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ variantTitle: title, ingredients: ingredients, steps: stepsForVariant, preparationTips: tips })
                 });
-                hideLoading();
                 if (!r.ok) throw new Error('Не удалось сохранить вариант');
                 const created = await r.json();
-                alert('Вариант сохранён');
                 showRecipe(created.id);
             } catch (e) {
-                hideLoading();
                 alert('Ошибка: ' + e.message);
+            } finally {
+                recipeViewState.savingVariant = false;
+                if (btn) btn.disabled = false;
+                hideLoading();
             }
         }
 
@@ -534,7 +543,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                     if (filtered.length > 0) {
                         let html = '<h2>Мои рецепты</h2><div class="recipe-list">';
                         filtered.forEach(recipe => {
-                            html += '<div class="recipe-item">' +
+                            html += '<div class="recipe-item" ondblclick="showRecipe(\'' + recipe.id + '\')">' +
                                 '<span class="recipe-item-title" onclick="showRecipe(\'' + recipe.id + '\')">' + recipe.title + '</span>' +
                                 '<div style="display:flex;align-items:center;gap:8px;">' +
                                 '<span style="cursor:pointer;font-size:16px;color:var(--text-muted);" onclick="showRecipe(\'' + recipe.id + '\')">➔</span>' +
@@ -586,7 +595,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                 if (data.length > 0) {
                     let html = '<h2>Сохраненные рецепты</h2><div class="recipe-list">';
                     data.forEach(recipe => {
-                        html += '<div class="recipe-item">' +
+                        html += '<div class="recipe-item" ondblclick="showRecipe(\'' + recipe.id + '\')">' +
                             '<span class="recipe-item-title" onclick="showRecipe(\'' + recipe.id + '\')">' + recipe.title + '</span>' +
                             '<div style="display:flex;align-items:center;gap:8px;">' +
                             '<span style="cursor:pointer;font-size:16px;color:var(--text-muted);" onclick="showRecipe(\'' + recipe.id + '\')">➔</span>' +
@@ -608,6 +617,16 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
         // Отрисовка разметки рецепта
         function renderRecipeHtml(recipe) {
             let html = `<h2>${recipe.title}</h2>`;
+
+            // Панель действий сверху (иконки, подпись при наведении)
+            html += '<div class="top-action-bar">';
+            if (previousStateHtml) {
+                html += `<button class="icon-btn" onclick="goBack()" title="Назад">←</button>`;
+            } else {
+                html += `<button class="icon-btn" onclick="switchMode('recipes', document.getElementById('mode-recipes'))" title="Ко всем рецептам">🗂️</button>`;
+            }
+            html += `<button class="icon-btn" onclick="exportToObsidian('${recipe.id}')" title="Сохранить в Obsidian"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M19.355 18.538a68.967 68.959 0 0 0 1.858-2.954.81.81 0 0 0-.062-.9c-.516-.685-1.504-2.075-2.042-3.362-.553-1.321-.636-3.375-.64-4.377a1.707 1.707 0 0 0-.358-1.05l-3.198-4.064a3.744 3.744 0 0 1-.076.543c-.106.503-.307 1.004-.536 1.5-.134.29-.29.6-.446.914l-.31.626c-.516 1.068-.997 2.227-1.132 3.59-.124 1.26.046 2.73.815 4.481.128.011.257.025.386.044a6.363 6.363 0 0 1 3.326 1.505c.916.79 1.744 1.922 2.415 3.5zM8.199 22.569c.073.012.146.02.22.02.78.024 2.095.092 3.16.29.87.16 2.593.64 4.01 1.055 1.083.316 2.198-.548 2.355-1.664.114-.814.33-1.735.725-2.58l-.01.005c-.67-1.87-1.522-3.078-2.416-3.849a5.295 5.295 0 0 0-2.778-1.257c-1.54-.216-2.952.19-3.84.45.532 2.218.368 4.829-1.425 7.531zM5.533 9.938c-.023.1-.056.197-.098.29L2.82 16.059a1.602 1.602 0 0 0 .313 1.772l4.116 4.24c2.103-3.101 1.796-6.02.836-8.3-.728-1.73-1.832-3.081-2.55-3.831zM9.32 14.01c.615-.183 1.606-.465 2.745-.534-.683-1.725-.848-3.233-.716-4.577.154-1.552.7-2.847 1.235-3.95.113-.235.223-.454.328-.664.149-.297.288-.577.419-.86.217-.47.379-.885.46-1.27.08-.38.08-.72-.014-1.043-.095-.325-.297-.675-.68-1.06a1.6 1.6 0 0 0-1.475.36l-4.95 4.452a1.602 1.602 0 0 0-.513.952l-.427 2.83c.672.59 2.328 2.316 3.335 4.711.09.21.175.43.253.653z"/></svg></button>`;
+            html += '</div>';
 
             // Помечено как изменённый рецепт — баннер с кнопкой «Сохранить как вариант»
             if (recipeViewState.modified && !recipeViewState.sourceId) {
@@ -683,19 +702,6 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             html += '<h3>Инструкция по приготовлению</h3><ol id="recipeStepsList">';
             (recipeViewState.steps && recipeViewState.steps.length ? recipeViewState.steps : recipe.steps).forEach(function (s) { html += '<li>' + escapeHtml(s.description) + '</li>'; });
             html += '</ol>';
-
-            // Группа кнопок внизу
-            html += `<div class="btn-group">
-                        <button class="action-btn" onclick="exportToObsidian('${recipe.id}')">💾 Сохранить в Obsidian</button>`;
-
-            // Если есть сохраненный предыдущий экран (меню или поиск по продуктам) — выводим кнопку Назад
-            if (previousStateHtml) {
-                html += `<button class="action-btn secondary" onclick="goBack()">🔙 Назад</button>`;
-            } else {
-                html += `<button class="action-btn secondary" onclick="switchMode('recipes', document.getElementById('mode-recipes'))">🗂️ Ко всем рецептам</button>`;
-            }
-
-            html += `</div>`;
 
             return html;
         }
@@ -803,6 +809,9 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             var title = prompt('Название варианта (например: "без сметаны"):');
             if (title === null) return;
 
+            st.busy = true;
+            var card = document.getElementById('mealCard_' + itemId);
+            if (card) card.classList.add('is-busy');
             showLoading();
             try {
                 const res = await fetch('/api/recipes/' + st.recipeId + '?servings=' + st.portions);
@@ -847,10 +856,11 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                 }
 
                 rerenderMealCard(itemId);
-                alert('Вариант сохранён и применён к пункту меню');
             } catch (e) {
                 alert('Ошибка: ' + e.message);
             } finally {
+                st.busy = false;
+                if (card) card.classList.remove('is-busy');
                 hideLoading();
             }
         }
@@ -983,6 +993,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
         }
 
         async function exportToObsidian(id) {
+            showLoading();
             try {
                 const r = await fetch(`/api/recipes/${id}/export-to-obsidian?chatId=0`, { method: 'POST' });
                 const data = await r.json();
@@ -993,6 +1004,8 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                 }
             } catch (e) {
                 alert('Ошибка экспорта: ' + e.message);
+            } finally {
+                hideLoading();
             }
         }
 

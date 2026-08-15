@@ -430,6 +430,33 @@
             margin-top: 20px;
         }
 
+        /* Панель действий сверху: квадратные иконки, подпись при наведении */
+        .top-action-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--card-bg);
+            color: var(--text-muted);
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+            .icon-btn:hover {
+                background: rgba(255, 255, 255, 0.08);
+                color: var(--text-main);
+            }
+
         .action-btn {
             background-color: var(--accent-color);
             border: none;
@@ -447,6 +474,12 @@
 
             .action-btn:hover {
                 background-color: var(--accent-hover);
+            }
+
+            .action-btn:disabled {
+                opacity: 0.55;
+                cursor: not-allowed;
+                pointer-events: none;
             }
 
             .action-btn.secondary {
@@ -568,12 +601,15 @@
             color: var(--text-main);
         }
 
-        /* Спиннер загрузки */
+        /* Спиннер загрузки — полноэкранный блокирующий оверлей */
         .loader {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
             display: none;
             justify-content: center;
             align-items: center;
-            padding: 30px;
+            background: rgba(0, 0, 0, 0.35);
         }
 
         .typing {
