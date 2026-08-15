@@ -52,7 +52,7 @@ dotnet user-secrets set "ApiKeys:Llm" "<llm-key>"
     // IMPORTANT: the recipe parser asks the model to return a JSON array with
     // ALL recipes found in one video. Models with a small output budget will
     // truncate the response and drop recipes. Use one with a large output
-    // limit (verified: openai/gpt-oss-120b on Groq).
+    // limit (verified: gemma4:31b-cloud on Ollama).
     "ModelId": "",
     // Language for recipes, scaling and substitutions.
     "TargetLanguage": "Russian"
