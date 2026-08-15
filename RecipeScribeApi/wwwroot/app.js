@@ -1167,37 +1167,40 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             try {
                 const r = await fetch(`/api/recipes/${id}/text`);
                 if (!r.ok) throw new Error('Не удалось получить текст рецепта');
-                const text = await r.text();
-
-                var ok = false;
-                if (navigator.clipboard && window.isSecureContext) {
-                    try {
-                        await navigator.clipboard.writeText(text);
-                        ok = true;
-                    } catch (e) { }
-                }
-                if (!ok) {
-                    var ta = document.createElement('textarea');
-                    ta.value = text;
-                    ta.style.position = 'fixed';
-                    ta.style.opacity = '0';
-                    document.body.appendChild(ta);
-                    ta.select();
-                    ok = document.execCommand('copy');
-                    document.body.removeChild(ta);
-                }
-                if (!ok) throw new Error('Не удалось скопировать в буфер обмена');
-
-                var btn = document.getElementById('copyMdBtn');
-                if (btn) {
-                    var oldTitle = btn.title;
-                    btn.title = 'Скопировано ✓';
-                    setTimeout(function () { btn.title = oldTitle; }, 1500);
-                }
+                await copyTextToClipboard(await r.text(), 'copyMdBtn');
             } catch (e) {
                 alert('Ошибка: ' + e.message);
             } finally {
                 hideLoading();
+            }
+        }
+
+        // Копирование текста в буфер с обратной связью на кнопке (без модалок)
+        async function copyTextToClipboard(text, btnId) {
+            var ok = false;
+            if (navigator.clipboard && window.isSecureContext) {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    ok = true;
+                } catch (e) { }
+            }
+            if (!ok) {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+            if (!ok) throw new Error('Не удалось скопировать в буфер обмена');
+
+            var btn = document.getElementById(btnId);
+            if (btn) {
+                var oldTitle = btn.title;
+                btn.title = 'Скопировано ✓';
+                setTimeout(function () { btn.title = oldTitle; }, 1500);
             }
         }
 
@@ -1212,6 +1215,8 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                 hideLoading();
                 setMenuLocked(false);
 
+                _shoppingListText = text;
+
                 // Конвертируем markdown в HTML (звёздочки → жирный, • → маркеры)
                 var html = text
                     .replace(/\*(.*?)\*/g, '<b>$1</b>')
@@ -1219,17 +1224,23 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                     .replace(/\n/g, '<br>');
 
                 renderResults(`
+                    <div class="top-action-bar">
+                        <button class="icon-btn" onclick="loadCurrentMenu()" title="Назад к меню">←</button>
+                        <button class="icon-btn" id="copyListBtn" onclick="copyShoppingListText()" title="Скопировать текст">📋</button>
+                    </div>
                     <h2>Список покупок</h2>
                     <div style="line-height: 1.8; color: var(--text-main); font-size: 15px;">${html}</div>
-                    <div class="btn-group">
-                        <button class="action-btn secondary" onclick="loadCurrentMenu()">📅 Назад к меню</button>
-                    </div>
                 `);
             } catch (e) {
                 hideLoading();
                 setMenuLocked(false);
                 alert('Ошибка: ' + e.message);
             }
+        }
+
+        function copyShoppingListText() {
+            copyTextToClipboard((_shoppingListText || '').replace(/\*/g, ''), 'copyListBtn')
+                .catch(function (e) { alert('Ошибка: ' + e.message); });
         }
 
         // Блокировка изменения карточек меню и кнопок, пока собирается список покупок
