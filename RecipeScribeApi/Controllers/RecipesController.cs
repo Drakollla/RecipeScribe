@@ -82,10 +82,13 @@ public class RecipesController : ControllerBase
             Ingredients = ingredients
         });
     }
+    [HttpGet("search")]
     public async Task<IActionResult> Search([FromQuery] string ingredients, [FromQuery] int limit = 10)
     {
         if (string.IsNullOrWhiteSpace(ingredients))
             return BadRequest("ingredients is required.");
+
+        limit = Math.Clamp(limit, 1, 50);
 
         var products = ingredients.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
         var recipes = await _repository.SearchByIngredientsAsync(products, limit);
