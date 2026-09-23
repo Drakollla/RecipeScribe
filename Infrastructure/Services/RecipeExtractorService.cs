@@ -133,6 +133,10 @@ public class RecipeExtractorService : IRecipeExtractorService
 
             return recipes.Where(r => !IsRecipeMissing(r)).ToList();
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch
         {
             return new List<Recipe>();
