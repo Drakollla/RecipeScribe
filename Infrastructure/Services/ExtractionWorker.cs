@@ -23,7 +23,7 @@ public class ExtractionWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("ExtractionWorker запущен и ожидает задачи.");
+        _logger.LogInformation(ExtractionJobMessages.LogStarted);
 
         while (await _jobManager.Reader.WaitToReadAsync(stoppingToken))
         {
@@ -39,7 +39,7 @@ public class ExtractionWorker : BackgroundService
         if (job == null || job.Status == ExtractionStatus.Cancelled)
             return;
 
-        _logger.LogInformation("Начало обработки задачи {JobId} для URL: {Url}", jobId, job.Url);
+        _logger.LogInformation(ExtractionJobMessages.LogJobStarted, jobId, job.Url);
         MarkProcessing(jobId);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -83,7 +83,7 @@ public class ExtractionWorker : BackgroundService
         );
 
         _logger.LogInformation(
-            "Задача {JobId} успешно завершена. Создано рецептов: {Count} (ID: [{RecipeIds}])",
+            ExtractionJobMessages.LogJobCompleted,
             jobId,
             recipes.Count,
             string.Join(", ", recipes.Select(r => r.Id)));
@@ -96,7 +96,7 @@ public class ExtractionWorker : BackgroundService
         _jobManager.UpdateJob(jobId, j =>
         {
             j.Status = ExtractionStatus.Processing;
-            j.ProgressMessage = "Скачивание и обработка видео...";
+            j.ProgressMessage = ExtractionJobMessages.MessageProcessing;
         });
     }
 
@@ -105,7 +105,7 @@ public class ExtractionWorker : BackgroundService
         _jobManager.UpdateJob(jobId, j =>
         {
             j.Status = ExtractionStatus.Completed;
-            j.ProgressMessage = "Готово!";
+            j.ProgressMessage = ExtractionJobMessages.MessageCompleted;
             j.RecipeIds = recipes.Select(r => r.Id).ToList();
             j.FinishedAt = DateTime.UtcNow;
         });
@@ -113,13 +113,13 @@ public class ExtractionWorker : BackgroundService
 
     private void MarkInterrupted(Guid jobId)
     {
-        _logger.LogWarning("Задача {JobId} отменена (пользователем или при остановке приложения).", jobId);
+        _logger.LogWarning(ExtractionJobMessages.LogJobInterrupted, jobId);
         _jobManager.UpdateJob(jobId, j =>
         {
             if (j.Status != ExtractionStatus.Cancelled)
             {
                 j.Status = ExtractionStatus.Failed;
-                j.Error = "Сервер перезагружается.";
+                j.Error = ExtractionJobMessages.MessageShutdown;
             }
 
             j.FinishedAt ??= DateTime.UtcNow;
@@ -128,7 +128,7 @@ public class ExtractionWorker : BackgroundService
 
     private void MarkFailed(Guid jobId, Exception ex)
     {
-        _logger.LogError(ex, "Ошибка при обработке задачи {JobId}", jobId);
+        _logger.LogError(ex, ExtractionJobMessages.LogJobFailed, jobId);
         _jobManager.UpdateJob(jobId, j =>
         {
             j.Status = ExtractionStatus.Failed;
