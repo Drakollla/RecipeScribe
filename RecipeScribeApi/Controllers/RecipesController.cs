@@ -98,16 +98,82 @@ public class RecipesController : ControllerBase
     }
 
     [HttpPost("extract")]
-    public async Task<IActionResult> Extract([FromBody] CreateRecipeDto dto)
+    [ProducesResponseType(typeof(ExtractionJobDto), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public IActionResult ExtractRecipe(
+        [FromBody] StartExtractionDto dto,
+        [FromServices] IExtractionJobManager jobManager)
     {
-        _logger.LogInformation("Extracting recipe from {Url}", dto.Url);
-        var recipes = await _extractor.ExtractAndSaveRecipeAsync(dto.Url);
+        if (string.IsNullOrWhiteSpace(dto.Url))
+            return BadRequest("URL не может быть пустым.");
 
-        if (recipes.Count == 0)
-            throw new RecipeScribeException(ErrorType.ParseError, "Failed to extract recipe.");
+        var job = jobManager.Enqueue(dto.Url);
 
-        return Ok(recipes.Select(r => r.ToDto()).ToList());
+        if (job == null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { message = "Очередь извлечения переполнена. Подождите и попробуйте снова." });
+
+        var responseDto = ToJobDto(job);
+
+        return AcceptedAtAction(nameof(GetExtractionStatus), new { id = job.Id }, responseDto);
     }
+
+    [HttpGet("extract/jobs/{id:guid}")]
+    [ProducesResponseType(typeof(ExtractionJobDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult GetExtractionStatus(
+        Guid id,
+        [FromServices] IExtractionJobManager jobManager)
+    {
+        var job = jobManager.GetJob(id);
+        if (job == null)
+            return NotFound(new { message = "Задача не найдена" });
+
+        return Ok(ToJobDto(job));
+    }
+
+    [HttpPost("extract/jobs/{id:guid}/cancel")]
+    [ProducesResponseType(typeof(ExtractionJobDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public IActionResult CancelExtraction(Guid id, [FromServices] IExtractionJobManager jobManager)
+    {
+        var job = jobManager.CancelJob(id);
+        
+        if (job == null)
+            return NotFound(new { message = "Задача не найдена" });
+
+        if (job.Status != ExtractionStatus.Cancelled)
+            return Conflict(new { message = "Завершённые задачи нельзя отменить." });
+
+        return Ok(ToJobDto(job));
+    }
+
+    [HttpPost("extract/jobs/{id:guid}/resume")]
+    [ProducesResponseType(typeof(ExtractionJobDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public IActionResult ResumeExtraction(
+        Guid id,
+        [FromServices] IExtractionJobManager jobManager)
+    {
+        var job = jobManager.GetJob(id);
+        if (job == null)
+            return NotFound(new { message = "Задача не найдена" });
+
+        if (job.Status != ExtractionStatus.Cancelled)
+            return Conflict(new { message = "Возобновить можно только отменённую задачу." });
+
+        if (jobManager.ResumeJob(id) == null)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { message = "Очередь извлечения переполнена. Подождите и попробуйте снова." });
+
+        return Ok(ToJobDto(job));
+    }
+
+    private static ExtractionJobDto ToJobDto(ExtractionJob job) =>
+        new(job.Id, job.Url, job.Status, job.ProgressMessage, job.RecipeIds, job.Error, job.CreatedAt);
 
     [HttpPost("{id:guid}/export-to-obsidian")]
     public async Task<IActionResult> ExportToObsidian(Guid id, [FromQuery] long chatId = 0)

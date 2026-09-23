@@ -28,6 +28,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRecipeRepository, RecipeRepository>();
         services.AddScoped<IRecipeExtractorService, RecipeExtractorService>();
 
+        services.AddSingleton<ExtractionJobManager>();
+        services.AddSingleton<IExtractionJobManager>(sp => sp.GetRequiredService<ExtractionJobManager>());
+        services.AddHostedService<ExtractionWorker>();
+
         return services;
     }
 

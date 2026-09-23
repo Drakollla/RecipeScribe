@@ -541,6 +541,256 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             }
         }
 
+        // ---- Фоновая загрузка рецептов: плашка как в Google Drive (не блокирует страницу) ----
+        var JOB_PENDING = 0, JOB_PROCESSING = 1, JOB_COMPLETED = 2, JOB_FAILED = 3, JOB_CANCELLED = 4;
+        var extractionRows = {};
+        var extractionTimer = null;
+
+        // Начать извлечение: POST возвращает 202 + jobId, сайт остаётся кликабельным
+        async function enqueueExtraction(url) {
+            var r = await fetch('/api/recipes/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url })
+            });
+            if (r.status === 202) {
+                var job = await r.json();
+                addExtractionRow(job);
+                return job;
+            }
+            if (r.status === 503)
+                throw new Error('Очередь извлечения переполнена. Подождите и попробуйте снова.');
+            throw new Error((await extractError(r)) || 'Не удалось поставить видео в очередь');
+        }
+
+        // Добавить строку в плашку и начать опрос статуса
+        function addExtractionRow(job) {
+            var list = document.getElementById('uploadTrayList');
+            document.getElementById('uploadTray').style.display = '';
+
+            var row = document.createElement('div');
+            row.className = 'upload-item';
+            row.setAttribute('data-jobid', job.id);
+            row.innerHTML =
+                '<div class="upload-icon"><span class="upload-spinner"></span></div>' +
+                '<div class="upload-body">' +
+                    '<div class="upload-title">' + escapeHtml(shortUrl(job.url)) + '</div>' +
+                    '<div class="upload-status">' + escapeHtml(job.progressMessage || 'В очереди...') + '</div>' +
+                '</div>' +
+                '<div class="upload-actions"></div>';
+
+            list.insertBefore(row, list.firstChild);
+            extractionRows[job.id] = { url: job.url, recipeIds: [], busy: false };
+            renderActionButtons(row, job);
+
+            // Пытаемся подтянуть название видео из oEmbed (молча, если не выйдет)
+            fetchVideoTitle(job.url).then(function (title) {
+                if (title) {
+                    var t = row.querySelector('.upload-title');
+                    if (t) t.textContent = title;
+                }
+            });
+
+            startExtractionPolling();
+        }
+
+        function rowOf(id) {
+            return document.querySelector('.upload-item[data-jobid="' + id + '"]');
+        }
+
+        // Кнопки в строке плашки: отмена для активных, возобновление для отменённых, ✕ всегда
+        function renderActionButtons(row, job) {
+            var cell = row.querySelector('.upload-actions');
+            if (!cell) return;
+
+            var html = '';
+            if (job.status === JOB_PENDING || job.status === JOB_PROCESSING) {
+                html += '<button class="upload-btn" title="Отмена" onclick="cancelExtraction(\'' + job.id + '\')">⏹</button>';
+            } else if (job.status === JOB_CANCELLED) {
+                html += '<button class="upload-btn" title="Возобновить" onclick="resumeExtraction(\'' + job.id + '\')">▶</button>';
+            }
+            html += '<button class="upload-close" title="Закрыть" onclick="removeExtractionRow(\'' + job.id + '\')">✕</button>';
+            cell.innerHTML = html;
+        }
+
+        // Отмена: POST /cancel, затем сразу перерисовываем строку по ответу сервера
+        async function cancelExtraction(id) {
+            var e = extractionRows[id];
+            if (!e || e.busy) return;
+            e.busy = true;
+            try {
+                var r = await fetch('/api/recipes/extract/jobs/' + id + '/cancel', { method: 'POST' });
+                if (r.status === 404) {
+                    removeExtractionRow(id);
+                    return;
+                }
+                if (!r.ok) throw new Error(await extractError(r));
+                renderExtractionRow(rowOf(id), await r.json());
+            } catch (err) {
+                var row = rowOf(id);
+                if (row) {
+                    var st = row.querySelector('.upload-status');
+                    if (st) st.innerHTML = escapeHtml(err.message || 'Не удалось отменить задачу');
+                }
+            } finally {
+                if (e) e.busy = false;
+            }
+        }
+
+        // Возобновление: POST /resume — задача возвращается в очередь, опрос перезапускается
+        async function resumeExtraction(id) {
+            var e = extractionRows[id];
+            if (!e || e.busy) return;
+            e.busy = true;
+            try {
+                var r = await fetch('/api/recipes/extract/jobs/' + id + '/resume', { method: 'POST' });
+                if (r.status === 404) {
+                    removeExtractionRow(id);
+                    return;
+                }
+                if (!r.ok) throw new Error(await extractError(r));
+                renderExtractionRow(rowOf(id), await r.json());
+                startExtractionPolling();
+            } catch (err) {
+                var row = rowOf(id);
+                if (row) {
+                    var st = row.querySelector('.upload-status');
+                    if (st) st.innerHTML = escapeHtml(err.message || 'Не удалось возобновить задачу');
+                }
+            } finally {
+                if (e) e.busy = false;
+            }
+        }
+
+        function removeExtractionRow(id) {
+            var row = document.querySelector('.upload-item[data-jobid="' + id + '"]');
+            if (row && row.parentNode) row.parentNode.removeChild(row);
+            delete extractionRows[id];
+            if (!document.querySelectorAll('.upload-item').length)
+                document.getElementById('uploadTray').style.display = 'none';
+        }
+
+        // Неблокирующий опрос статусов всех активных строк
+        function startExtractionPolling() {
+            if (extractionTimer) return;
+            extractionTimer = setInterval(function () {
+                if (!document.querySelectorAll('.upload-item:not(.is-finished)').length) {
+                    clearInterval(extractionTimer);
+                    extractionTimer = null;
+                    return;
+                }
+                document.querySelectorAll('.upload-item:not(.is-finished)').forEach(function (row) {
+                    pollExtractionRow(row);
+                });
+            }, 2000);
+        }
+
+        async function pollExtractionRow(row) {
+            var id = row.getAttribute('data-jobid');
+            try {
+                var r = await fetch('/api/recipes/extract/jobs/' + id);
+                if (!r.ok) throw new Error('Не удалось получить статус');
+                renderExtractionRow(row, await r.json());
+            } catch (e) {
+                renderExtractionRow(row, { status: JOB_FAILED, id: id, error: e.message });
+            }
+        }
+
+        function renderExtractionRow(row, job) {
+            if (!row) return;
+            var icon = row.querySelector('.upload-icon');
+            var status = row.querySelector('.upload-status');
+
+            // Активные состояния: спиннер, строка снова «живая»
+            if (job.status === JOB_PENDING || job.status === JOB_PROCESSING) {
+                row.classList.remove('is-finished');
+                icon.innerHTML = '<span class="upload-spinner"></span>';
+                status.innerHTML = escapeHtml(job.progressMessage || 'В очереди...');
+                renderActionButtons(row, job);
+                return;
+            }
+
+            // Завершённые состояния: строка больше не опрашивается
+            row.classList.add('is-finished');
+
+            if (job.status === JOB_COMPLETED) {
+                if (extractionRows[job.id]) extractionRows[job.id].recipeIds = job.recipeIds || [];
+                icon.innerHTML = '✅';
+                var n = (job.recipeIds || []).length;
+                status.innerHTML = n > 0
+                    ? 'Готово · <a class="upload-link" onclick="openExtractionResult(\'' + job.id + '\')">Открыть рецепт →</a>'
+                    : 'Готово, рецепты не найдены';
+                if (n > 0) loadExtractionTitle(row, job.id);
+            } else if (job.status === JOB_FAILED) {
+                icon.innerHTML = '⚠️';
+                status.innerHTML = escapeHtml(job.error || 'Ошибка извлечения');
+            } else if (job.status === JOB_CANCELLED) {
+                icon.innerHTML = '⛔';
+                status.innerHTML = 'Отменено';
+            }
+
+            renderActionButtons(row, job);
+        }
+
+        // Открыть готовый результат: один рецепт — сразу, несколько — списком
+        function openExtractionResult(id) {
+            var e = extractionRows[id];
+            if (!e || !e.recipeIds || !e.recipeIds.length) return;
+            if (e.recipeIds.length === 1) {
+                showRecipe(e.recipeIds[0]);
+                return;
+            }
+            showLoading();
+            Promise.all(e.recipeIds.map(function (rid) {
+                return fetch('/api/recipes/' + rid).then(function (r) { return r.ok ? r.json() : null; });
+            })).then(function (recipes) {
+                hideLoading();
+                recipes = recipes.filter(Boolean);
+                var html = '<h2>Найдено рецептов: ' + recipes.length + '</h2><div class="recipe-list">';
+                recipes.forEach(function (r) {
+                    html += '<div class="recipe-item" onclick="showRecipe(\'' + r.id + '\')">' +
+                            '<span class="recipe-item-title">' + escapeHtml(r.title) + '</span><span>➔</span></div>';
+                });
+                html += '</div>';
+                renderResults(html);
+            }).catch(function (e2) {
+                hideLoading();
+                renderResults('<h2>Ошибка</h2><p>' + escapeHtml(e2.message) + '</p>');
+            });
+        }
+
+        function shortUrl(u) {
+            try {
+                var p = new URL(u);
+                return p.hostname + (p.pathname.length > 40 ? p.pathname.slice(0, 37) + '…' : p.pathname);
+            } catch (e) { return u.length > 48 ? u.slice(0, 45) + '…' : u; }
+        }
+
+        // Как только обработан — заменить URL на название первого рецепта
+        function loadExtractionTitle(row, id) {
+            var e = extractionRows[id];
+            if (!e || !e.recipeIds || !e.recipeIds.length) return;
+            fetch('/api/recipes/' + e.recipeIds[0])
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (recipe) {
+                    if (!recipe) return;
+                    var t = row.querySelector('.upload-title');
+                    if (t) {
+                        t.textContent = recipe.title +
+                            (e.recipeIds.length > 1 ? ' (+' + (e.recipeIds.length - 1) + ')' : '');
+                    }
+                })
+                .catch(function () { });
+        }
+
+        // Название видео через oEmbed (прогрессивное улучшение; при сбое — URL)
+        function fetchVideoTitle(url) {
+            return fetch('https://www.youtube.com/oembed?url=' + encodeURIComponent(url) + '&format=json')
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (d) { return d && d.title ? d.title : null; })
+                .catch(function () { return null; });
+        }
+
         // Показ лоадера
         function showLoading() {
             document.getElementById('loader').style.display = 'flex';
@@ -589,46 +839,13 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
 
             if (currentMode === 'youtube') {
                 if (!value) return;
-                showLoading();
-                hideResults();
                 try {
-                    const r = await fetch('/api/recipes/extract', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: value })
-                    });
-                    if (!r.ok) throw new Error((await r.json()).error || 'Не удалось обработать видео');
-                    const recipes = await r.json();
-                    hideLoading();
-                    if (Array.isArray(recipes)) {
-                        if (recipes.length === 1) {
-                            const recipe = recipes[0];
-                            currentRecipeObj = recipe;
-                            activeRecipeId = recipe.id;
-                            prepareRecipeView(recipe);
-                            renderResults(renderRecipeHtml(recipe));
-                        } else if (recipes.length > 1) {
-                            let html = '<h2>Найдено рецептов: ' + recipes.length + '</h2><div class="recipe-list">';
-                            recipes.forEach(r => {
-                                html += '<div class="recipe-item" onclick="showRecipe(\'' + r.id + '\')">' +
-                                    '<span class="recipe-item-title">' + r.title + '</span>' +
-                                    '<span>➔</span></div>';
-                            });
-                            html += '</div>';
-                            renderResults(html);
-                        } else {
-                            renderResults('<h2>Ошибка</h2><p>Не удалось извлечь рецепт.</p>');
-                        }
-                    } else {
-                        // fallback: single object (backward compat)
-                        currentRecipeObj = recipes;
-                        activeRecipeId = recipes.id;
-                        prepareRecipeView(recipes);
-                        renderResults(renderRecipeHtml(recipes));
-                    }
+                    await enqueueExtraction(value);
+                    const input = document.getElementById('mainInput');
+                    input.value = '';
+                    input.focus();
                 } catch (e) {
-                    hideLoading();
-                    renderResults(`<h2>Ошибка</h2><p>${e.message}</p>`);
+                    alert('Ошибка: ' + e.message);
                 }
             }
 

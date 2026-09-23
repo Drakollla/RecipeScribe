@@ -28,14 +28,14 @@ public class YouTubeDownloader : IVideoDownloader
         Directory.CreateDirectory(AudioDir);
 
         var ytdl = CreateYoutubeDl();
-        var videoData = await FetchVideoDataAsync(ytdl, videoUrl);
+        var videoData = await FetchVideoDataAsync(ytdl, videoUrl, ct);
 
         string? cachedTranscript = await ReadCachedTranscriptAsync(videoData.ID, ct);
 
         if (cachedTranscript != null)
             return ToMetadata(videoData, audioFilePath: null, cachedTranscript);
 
-        string audioPath = await DownloadAudioFileAsync(ytdl, videoUrl, videoData.ID);
+        string audioPath = await DownloadAudioFileAsync(ytdl, videoUrl, videoData.ID, ct);
         
         return ToMetadata(videoData, audioPath, cachedTranscript: null);
     }
@@ -60,12 +60,15 @@ public class YouTubeDownloader : IVideoDownloader
         OutputFolder = AudioDir
     };
 
-    private static async Task<VideoData> FetchVideoDataAsync(YoutubeDL ytdl, string videoUrl)
+    private static async Task<VideoData> FetchVideoDataAsync(YoutubeDL ytdl, string videoUrl, CancellationToken ct)
     {
-        var video = await ytdl.RunVideoDataFetch(videoUrl);
+        var video = await ytdl.RunVideoDataFetch(videoUrl, ct: ct);
 
         if (!video.Success)
+        {
+            ct.ThrowIfCancellationRequested();
             throw new RecipeScribeException(ErrorType.VideoNotFound, $"Failed to retrieve video data: {string.Join("; ", video.ErrorOutput)}");
+        }
 
         return video.Data;
     }
@@ -80,7 +83,7 @@ public class YouTubeDownloader : IVideoDownloader
         return await File.ReadAllTextAsync(transcriptPath, System.Text.Encoding.UTF8, ct);
     }
 
-    private static async Task<string> DownloadAudioFileAsync(YoutubeDL ytdl, string videoUrl, string videoId)
+    private static async Task<string> DownloadAudioFileAsync(YoutubeDL ytdl, string videoUrl, string videoId, CancellationToken ct)
     {
         var options = new OptionSet
         {
@@ -88,10 +91,11 @@ public class YouTubeDownloader : IVideoDownloader
         };
 
         var downloadResult = await ytdl.RunAudioDownload(
-            videoUrl, AudioConversionFormat.Mp3, overrideOptions: options);
+            videoUrl, AudioConversionFormat.Mp3, ct: ct, overrideOptions: options);
 
         if (!downloadResult.Success)
         {
+            ct.ThrowIfCancellationRequested();
             string errorDetails = string.Join(Environment.NewLine, downloadResult.ErrorOutput);
             throw new RecipeScribeException(ErrorType.Network, $"Failed to download audio: {errorDetails}");
         }
