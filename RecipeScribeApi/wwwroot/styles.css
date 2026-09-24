@@ -1021,6 +1021,72 @@
             animation: valueBump 0.25s ease;
         }
 
+        /* Режим пересчёта по ингредиенту («у меня есть …») */
+        .portion-btn:disabled {
+            opacity: 0.35;
+            cursor: default;
+        }
+
+            .portion-btn:disabled:hover {
+                background-color: transparent;
+                color: var(--text-muted);
+            }
+
+        .recipe-portions-widget .rescale-toggle-btn.active {
+            background-color: var(--accent-dim);
+            color: var(--accent-hover);
+        }
+
+        .rescale-hint {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin: 0 0 8px 0;
+        }
+
+            .rescale-hint .portion-btn {
+                font-size: 12px;
+                font-weight: normal;
+                margin-left: 4px;
+            }
+
+        .rescale-error {
+            color: #ff8080;
+        }
+
+        /* Поля «у меня есть» — по правому краю списка, вертикально по центру строки */
+        #recipeIngredientsList li::after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+
+        .ingredient-have {
+            float: right;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 16px;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .ingredient-have-input {
+            width: 64px;
+            padding: 1px 6px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-main);
+            font-size: 13px;
+            font-variant-numeric: tabular-nums;
+            transition: border-color 0.15s ease;
+        }
+
+            .ingredient-have-input:focus {
+                outline: none;
+                border-color: var(--accent-color);
+            }
+
         /* Folder browser modal */
         .folder-modal-overlay {
             position: fixed;

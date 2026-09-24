@@ -82,6 +82,48 @@ public class RecipesController : ControllerBase
             Ingredients = ingredients
         });
     }
+
+    [HttpPost("{id:guid}/rescale")]
+    [ProducesResponseType(typeof(RecipeDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RescaleByIngredient(Guid id, [FromBody] RescaleRecipeDto dto)
+    {
+        var recipe = await _repository.GetRecipeByIdAsync(id)
+            ?? throw new RecipeNotFoundException(id);
+
+        decimal? factor = null;
+
+        foreach (var constraint in dto.Constraints)
+        {
+            var ingredient = recipe.Ingredients.FirstOrDefault(i =>
+                string.Equals(i.Name?.Trim(), constraint.Ingredient?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+            if (ingredient is null)
+                continue;
+
+            var parsed = IngredientAmountParser.Parse(ingredient.Amount);
+            _logger.LogDebug("Rescale parse '{Amount}' → {Kind} qty={Qty} unit={Unit}",
+                ingredient.Amount, parsed.Kind, parsed.Quantity, parsed.Unit);
+
+            if (parsed.Quantity is not > 0)
+                continue;
+
+            var f = IngredientRescaler.Factor(constraint.Available, parsed.Quantity.Value);
+            factor = factor is null ? f : Math.Min(factor.Value, f);
+        }
+
+        if (factor is null or <= 0)
+            throw new BadRequestException("Could not parse any constrained ingredient amount.");
+
+        _logger.LogDebug("Rescale factor {Factor} for recipe {Id}", factor, id);
+
+        var scaled = IngredientRescaler.ScaleIngredients(recipe.Ingredients, factor.Value);
+        var ingredients = scaled.Select(i => new IngredientDto(i.Name, i.Amount)).ToList();
+
+        return Ok(recipe.ToDto() with { Ingredients = ingredients });
+    }
+
     [HttpGet("search")]
     public async Task<IActionResult> Search([FromQuery] string ingredients, [FromQuery] int limit = 10)
     {
