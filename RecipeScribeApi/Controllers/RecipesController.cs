@@ -46,9 +46,40 @@ public class RecipesController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var recipes = await _repository.GetAllRecipesAsync();
-        var dtos = recipes.Select(r => new RecipeSummaryDto(r.Id, r.Title, r.Ingredients.Select(i => i.Name).ToList())).ToList();
+        var dtos = recipes.Select(r => new RecipeSummaryDto(r.Id, r.Title, r.Ingredients.Select(i => i.Name).ToList(),
+            r.IsBreakfast, r.IsLunch, r.IsDinner, r.IsSnack)).ToList();
         
         return Ok(dtos);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> CreateManual([FromBody] SaveRecipeDto dto)
+    {
+        var recipe = new Recipe
+        {
+            Title = dto.Title.Trim(),
+            VideoUrl = string.Empty,
+            Servings = dto.Servings,
+            IsBreakfast = dto.IsBreakfast,
+            IsLunch = dto.IsLunch,
+            IsDinner = dto.IsDinner,
+            IsSnack = dto.IsSnack,
+            SourceId = null,
+            VariantTitle = null,
+            Ingredients = dto.Ingredients
+                .Select(i => new Ingredient { Name = i.Name.Trim(), Amount = i.Amount ?? string.Empty })
+                .ToList(),
+            Steps = dto.Steps
+                .Select((s, index) => new RecipeStep { Number = index + 1, Description = s.Description })
+                .ToList()
+        };
+
+        await _repository.SaveRecipeAsync(recipe);
+
+        _logger.LogInformation("Manual recipe {RecipeId} created", recipe.Id);
+
+        var variants = await _repository.GetVariantsAsync(recipe.Id);
+        return Ok(recipe.ToDto(variants: recipe.ToVariantDtos(variants)));
     }
 
     [HttpGet("{id:guid}", Name = "GetRecipeById")]
@@ -92,9 +123,42 @@ public class RecipesController : ControllerBase
 
         var products = ingredients.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
         var recipes = await _repository.SearchByIngredientsAsync(products, limit);
-        var result = recipes.Select(r => new RecipeSummaryDto(r.Id, r.Title, r.Ingredients.Select(i => i.Name).ToList())).ToList();
+        var result = recipes.Select(r => new RecipeSummaryDto(r.Id, r.Title, r.Ingredients.Select(i => i.Name).ToList(),
+            r.IsBreakfast, r.IsLunch, r.IsDinner, r.IsSnack)).ToList();
 
         return Ok(result);
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] SaveRecipeDto dto)
+    {
+        var recipe = await _repository.GetRecipeByIdAsync(id, trackChanges: true)
+            ?? throw new RecipeNotFoundException(id);
+
+        recipe.Title = dto.Title.Trim();
+        recipe.Servings = dto.Servings;
+        recipe.IsBreakfast = dto.IsBreakfast;
+        recipe.IsLunch = dto.IsLunch;
+        recipe.IsDinner = dto.IsDinner;
+        recipe.IsSnack = dto.IsSnack;
+
+        var ingredients = dto.Ingredients
+            .Select(i => new Ingredient { Name = i.Name.Trim(), Amount = i.Amount ?? string.Empty })
+            .ToList();
+        var steps = dto.Steps
+            .Select((s, index) => new RecipeStep { Number = index + 1, Description = s.Description })
+            .ToList();
+
+        await _repository.UpdateRecipeAsync(recipe, ingredients, steps);
+
+        _logger.LogInformation("Recipe {RecipeId} updated", recipe.Id);
+
+        var variants = await _repository.GetVariantsAsync(recipe.SourceId ?? recipe.Id);
+        var sourceRecipe = recipe.SourceId is null ? null : await _repository.GetSourceAsync(recipe.Id);
+
+        return Ok(recipe.ToDto(
+            variants: recipe.ToVariantDtos(variants),
+            sourceRecipe: sourceRecipe is null ? null : new RecipeVariantDto(sourceRecipe.Id, sourceRecipe.Title)));
     }
 
     [HttpPost("extract")]

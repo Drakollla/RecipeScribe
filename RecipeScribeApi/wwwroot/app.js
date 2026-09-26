@@ -2,11 +2,25 @@
         let portions = 2;
         let activeRecipeId = null;
         let previousStateHtml = null;
+        // Что именно лежит в previousStateHtml: 'recipes' — вкладка «Мои рецепты» (её дешевле
+        // перерисовать из свежего /api/recipes, чем отдавать устаревший снапшот), иначе null
+        let previousStateKind = null;
         let recipeViewState = { id: null, recipe: null, portions: 1, ingredients: [], steps: [], variants: [], sourceRecipe: null, sourceId: null, variantTitle: null, menuItemId: null, modified: false };
         let currentRecipeObj = null;
         let menuViewState = {};
         let currentPlan = null;
         let goBackToMenu = false;
+        // Вкладка «Мои рецепты»: кэш списка + фильтр приёма пищи + текстовый запрос
+        let allRecipesCache = null;
+        let recipesFilter = 'all';
+        let recipesQuery = '';
+        // Форма создания/редактирования: null — закрыта, иначе id рецепта (edit) либо '' (create)
+        let recipeFormId = null;
+        let recipeFormFrom = null; // 'list' | 'recipe' — куда вернуться по «Отмена»
+        let recipeFormSaving = false;
+        // Отслеживание правок в форме: «Сохранить» активна только при отличии от префилла
+        let recipeFormDirty = false;
+        let recipeFormBaseline = '';
 
 
         // Инициализация при загрузке
@@ -497,6 +511,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
         async function switchMode(mode, element) {
             currentMode = mode;
             previousStateHtml = null; // Очищаем историю переходов при явном клике на другую вкладку
+            previousStateKind = null;
             goBackToMenu = false;
 
             const buttons = document.querySelectorAll('.mode-btn');
@@ -815,13 +830,27 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
         }
 
         // Возврат к предыдущему сохраненному экрану (из рецепта назад в меню/поиск)
-        function goBack() {
+        async function goBack() {
             // Из рецепта возвращаемся в меню — перерисовываем его с обновлёнными порциями
             if (goBackToMenu && currentPlan) {
                 goBackToMenu = false;
                 activeRecipeId = null;
                 previousStateHtml = null;
+                previousStateKind = null;
                 renderResults(renderMealPlanHtml(currentPlan));
+                return;
+            }
+            // Назад в «Мои рецепты»: снапшот списка устарел после правки/создания рецепта —
+            // перерисовываем вкладку из свежего ответа, сохраняя текущий фильтр и запрос
+            if (previousStateKind === 'recipes') {
+                previousStateHtml = null;
+                previousStateKind = null;
+                activeRecipeId = null;
+                try {
+                    const r = await fetch('/api/recipes');
+                    if (r.ok) allRecipesCache = await r.json();
+                } catch (e) { /* остаёмся на кэше — список лучше устаревший, чем пустой */ }
+                renderRecipesTab();
                 return;
             }
             if (previousStateHtml) {
@@ -830,6 +859,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                 container.style.display = 'block';
                 activeRecipeId = null;
                 previousStateHtml = null;
+                previousStateKind = null;
             }
         }
 
@@ -902,29 +932,9 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                     const r = await fetch('/api/recipes');
                     const data = await r.json();
                     hideLoading();
-                    const q = value.toLowerCase();
-                    const filtered = data.filter(recipe =>
-                        recipe.title.toLowerCase().includes(q) ||
-                        (recipe.ingredientNames || []).some(function (name) {
-                            return name.toLowerCase().includes(q);
-                        })
-                    );
-                    if (filtered.length > 0) {
-                        let html = '<h2>Мои рецепты</h2><div class="recipe-list">';
-                        filtered.forEach(recipe => {
-                            html += '<div class="recipe-item" ondblclick="showRecipe(\'' + recipe.id + '\')">' +
-                                '<span class="recipe-item-title" onclick="showRecipe(\'' + recipe.id + '\')">' + recipe.title + '</span>' +
-                                '<div style="display:flex;align-items:center;gap:8px;">' +
-                                '<span style="cursor:pointer;font-size:16px;color:var(--text-muted);" onclick="showRecipe(\'' + recipe.id + '\')">➔</span>' +
-                                '<span style="cursor:pointer;font-size:16px;color:#f44336;opacity:0.6;" onclick="deleteRecipe(\'' + recipe.id + '\', \'' + recipe.title.replace(/'/g, "\\'") + '\')" title="Удалить">🗑️</span>' +
-                                '</div>' +
-                                '</div>';
-                        });
-                        html += '</div>';
-                        renderResults(html);
-                    } else {
-                        renderResults('<h2>Мои рецепты</h2><p>Ничего не найдено.</p>');
-                    }
+                    allRecipesCache = data;
+                    recipesQuery = value.toLowerCase();
+                    renderRecipesTab();
                 } catch (e) {
                     hideLoading();
                     renderResults(`<h2>Ошибка</h2><p>${e.message}</p>`);
@@ -961,25 +971,405 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                 const r = await fetch('/api/recipes');
                 const data = await r.json();
                 hideLoading();
-                if (data.length > 0) {
-                    let html = '<h2>Сохраненные рецепты</h2><div class="recipe-list">';
-                    data.forEach(recipe => {
-                        html += '<div class="recipe-item" ondblclick="showRecipe(\'' + recipe.id + '\')">' +
-                            '<span class="recipe-item-title" onclick="showRecipe(\'' + recipe.id + '\')">' + recipe.title + '</span>' +
-                            '<div style="display:flex;align-items:center;gap:8px;">' +
-                            '<span style="cursor:pointer;font-size:16px;color:var(--text-muted);" onclick="showRecipe(\'' + recipe.id + '\')">➔</span>' +
-                            '<span style="cursor:pointer;font-size:16px;color:#f44336;opacity:0.6;" onclick="deleteRecipe(\'' + recipe.id + '\', \'' + recipe.title.replace(/'/g, "\\'") + '\')" title="Удалить">🗑️</span>' +
-                            '</div>' +
-                            '</div>';
-                    });
-                    html += '</div>';
-                    renderResults(html);
-                } else {
-                    renderResults('<h2>Сохраненные рецепты</h2><p>В вашей книге рецептов пока пусто.</p>');
-                }
+                allRecipesCache = data;
+                recipesQuery = '';
+                renderRecipesTab();
             } catch (e) {
                 hideLoading();
                 renderResults(`<h2>Ошибка</h2><p>${e.message}</p>`);
+            }
+        }
+
+        // Совпадение рецепта с фильтром приёма пищи (OR: рецепт виден, если его флаг true)
+        function matchesMealFilter(recipe, filter) {
+            if (filter === 'breakfast') return !!recipe.isBreakfast;
+            if (filter === 'lunch') return !!recipe.isLunch;
+            if (filter === 'dinner') return !!recipe.isDinner;
+            if (filter === 'snack') return !!recipe.isSnack;
+            return true;
+        }
+
+        // Совпадение с текстовым запросом (заголовок + названия ингредиентов)
+        function matchesRecipesQuery(recipe) {
+            if (!recipesQuery) return true;
+            if (recipe.title.toLowerCase().includes(recipesQuery)) return true;
+            return (recipe.ingredientNames || []).some(function (name) {
+                return name.toLowerCase().includes(recipesQuery);
+            });
+        }
+
+        function setRecipesFilter(filter) {
+            recipesFilter = filter;
+            // Синхронизируем атрибуты checked (свойство одного radio само не сериализуется в innerHTML —
+            // иначе снапшот previousStateHtml при открытии рецепта вернёт не тот фильтр)
+            var radios = document.querySelectorAll('input[name="mealFilter"]');
+            radios.forEach(function (rb) {
+                if (rb.value === filter) rb.setAttribute('checked', '');
+                else rb.removeAttribute('checked');
+            });
+            var main = document.querySelector('.recipes-main');
+            if (main) main.innerHTML = buildRecipesMainHtml();
+            else renderRecipesTab();
+        }
+
+        // Правая колонка вкладки: заголовок + список (или пустое состояние)
+        function buildRecipesMainHtml() {
+            var visible = (allRecipesCache || [])
+                .filter(matchesRecipesQuery)
+                .filter(function (r) { return matchesMealFilter(r, recipesFilter); });
+
+            var html = '<div class="recipes-main"><div class="recipes-header">' +
+                '<h2>Мои рецепты</h2>' +
+                '<button type="button" class="action-btn recipes-new-btn" onclick="openRecipeForm(null)">➕ Новый рецепт</button>' +
+                '</div>';
+            if (visible.length > 0) {
+                html += '<div class="recipe-list">';
+                visible.forEach(function (recipe) {
+                    html += '<div class="recipe-item" ondblclick="showRecipe(\'' + recipe.id + '\')">' +
+                        '<span class="recipe-item-title" onclick="showRecipe(\'' + recipe.id + '\')">' + escapeHtml(recipe.title) + '</span>' +
+                        '<div class="recipe-item-actions">' +
+                        '<span class="recipe-item-open" onclick="showRecipe(\'' + recipe.id + '\')" title="Открыть">➔</span>' +
+                        '<span class="recipe-item-delete" onclick="askDeleteRecipe(\'' + recipe.id + '\')" title="Удалить">🗑️</span>' +
+                        '</div>' +
+                        '</div>';
+                });
+                html += '</div>';
+            } else if (!(allRecipesCache || []).length && !recipesQuery) {
+                html += '<p>В вашей книге рецептов пока пусто.</p>';
+            } else {
+                html += '<p>Ничего не найдено.</p>';
+            }
+            html += '</div>';
+            return html;
+        }
+
+        // Единый рендер вкладки: сайдбар-фильтр + список
+        function renderRecipesTab() {
+            var byQuery = (allRecipesCache || []).filter(matchesRecipesQuery);
+            var counts = { all: byQuery.length, breakfast: 0, lunch: 0, dinner: 0, snack: 0 };
+            byQuery.forEach(function (r) {
+                if (r.isBreakfast) counts.breakfast++;
+                if (r.isLunch) counts.lunch++;
+                if (r.isDinner) counts.dinner++;
+                if (r.isSnack) counts.snack++;
+            });
+
+            var options = [
+                ['all', 'Все'],
+                ['breakfast', 'Завтрак'],
+                ['lunch', 'Обед'],
+                ['dinner', 'Ужин'],
+                ['snack', 'Перекус']
+            ];
+
+            var html = '<div class="recipes-layout"><aside class="recipes-sidebar">' +
+                '<div class="recipes-sidebar-title">Приём пищи</div>';
+            options.forEach(function (opt) {
+                var checked = recipesFilter === opt[0] ? ' checked' : '';
+                html += '<label class="meal-radio">' +
+                    '<input type="radio" name="mealFilter" value="' + opt[0] + '"' + checked +
+                    ' onclick="setRecipesFilter(\'' + opt[0] + '\')">' +
+                    '<span class="meal-radio-label">' + opt[1] + '</span>' +
+                    '<span class="meal-count">' + counts[opt[0]] + '</span>' +
+                    '</label>';
+            });
+            html += '</aside>' + buildRecipesMainHtml() + '</div>';
+
+            renderResults(html);
+        }
+
+        // Удаление по id: заголовок берём из кэша, чтобы не встраивать его в HTML-атрибут
+        function askDeleteRecipe(id) {
+            var recipe = (allRecipesCache || []).find(function (r) { return r.id === id; });
+            deleteRecipe(id, recipe ? recipe.title : '');
+        }
+
+        // ---- Форма создания/редактирования рецепта ----
+
+        // id === null → создание (список), иначе редактирование из текущего view
+        function openRecipeForm(id) {
+            var container = document.getElementById('resultsContainer');
+            // Снапшот списка: «Отмена» при создании вернёт обратно; при редактировании
+            // снапшот уже сделан showRecipe() и не должен затираться
+            if (!previousStateHtml) {
+                previousStateHtml = container.innerHTML;
+                previousStateKind = (currentMode === 'recipes') ? 'recipes' : null;
+            }
+
+            recipeFormId = (id === null) ? '' : id;
+            recipeFormFrom = (id !== null && activeRecipeId !== null) ? 'recipe' : 'list';
+            recipeFormSaving = false;
+            recipeFormDirty = false;
+            recipeFormBaseline = '';
+
+            var data = null;
+            if (id !== null && recipeViewState.id) {
+                data = {
+                    title: recipeViewState.recipe.title,
+                    servings: recipeViewState.recipe.servings,
+                    isBreakfast: !!recipeViewState.recipe.isBreakfast,
+                    isLunch: !!recipeViewState.recipe.isLunch,
+                    isDinner: !!recipeViewState.recipe.isDinner,
+                    isSnack: !!recipeViewState.recipe.isSnack,
+                    // Ингредиенты/шаги берём из view — редактируем то, что на экране
+                    ingredients: recipeViewState.ingredients || [],
+                    steps: recipeViewState.steps || []
+                };
+            }
+
+            renderResults(renderRecipeFormHtml(data));
+            rfAfterRender(data);
+        }
+
+        function rfCheckbox(id, label, checked) {
+            return '<label class="rf-check"><input type="checkbox" id="' + id + '"' +
+                (checked ? ' checked' : '') + '><span>' + label + '</span></label>';
+        }
+
+        function renderRecipeFormHtml(data) {
+            var isEdit = !!data;
+            var html = '<div class="top-action-bar rf-topbar">' +
+                '<button class="icon-btn" onclick="cancelRecipeForm()" title="Отмена">←</button>' +
+                '<button class="action-btn rf-save-btn rf-save-top" onclick="saveRecipeForm()" title="Сохранить рецепт" disabled>💾 Сохранить</button>' +
+                '</div>';
+            html += '<h2>' + (isEdit ? 'Редактирование рецепта' : 'Новый рецепт') + '</h2>';
+            html += '<div class="recipe-form" id="rfForm">';
+
+            html += '<label class="rf-field"><span>Название</span>' +
+                '<input type="text" id="rfTitle" maxlength="300" placeholder="Например: Борщ со свёклой"></label>';
+
+            html += '<div class="rf-row">' +
+                '<label class="rf-field rf-servings"><span>Порций</span>' +
+                '<input type="number" id="rfServings" min="1" max="20" value="' + (isEdit ? data.servings : 2) + '"></label>' +
+                '<fieldset class="rf-meals"><legend>Приём пищи</legend>' +
+                rfCheckbox('rfBreakfast', 'Завтрак', isEdit && data.isBreakfast) +
+                rfCheckbox('rfLunch', 'Обед', isEdit && data.isLunch) +
+                rfCheckbox('rfDinner', 'Ужин', isEdit && data.isDinner) +
+                rfCheckbox('rfSnack', 'Перекус', isEdit && data.isSnack) +
+                '</fieldset></div>';
+
+            html += '<h3>Ингредиенты</h3><div id="rfIngredients" class="rf-list"></div>' +
+                '<button type="button" class="rf-add-btn" onclick="rfAddIngredient()">➕ Добавить ингредиент</button>';
+
+            html += '<h3>Инструкция по приготовлению</h3><div id="rfSteps" class="rf-list"></div>' +
+                '<button type="button" class="rf-add-btn" onclick="rfAddStep()">➕ Добавить шаг</button>';
+
+            html += '<div class="rf-actions">' +
+                '<button type="button" class="action-btn secondary rf-cancel-btn" onclick="cancelRecipeForm()">Отмена</button>' +
+                '<button type="button" class="action-btn rf-save-btn" onclick="saveRecipeForm()" disabled>💾 Сохранить</button>' +
+                '</div>';
+
+            html += '</div>';
+            return html;
+        }
+
+        // Строка ингредиента: значения кладём через .value (шаблон статический — без XSS)
+        function rfAddIngredient(name, amount) {
+            var box = document.getElementById('rfIngredients');
+            if (!box) return;
+            var row = document.createElement('div');
+            row.className = 'rf-ing-row';
+            row.innerHTML = '<input type="text" class="rf-ing-name" maxlength="200" placeholder="Ингредиент">' +
+                '<input type="text" class="rf-ing-amount" maxlength="200" placeholder="Количество (напр. 200 г)">' +
+                '<button type="button" class="rf-del-btn" onclick="rfRemoveIngredient(this)" title="Удалить строку">✕</button>';
+            row.querySelector('.rf-ing-name').value = name || '';
+            row.querySelector('.rf-ing-amount').value = amount || '';
+            box.appendChild(row);
+            rfRefreshSaveState();
+        }
+
+        function rfRemoveIngredient(btn) {
+            btn.parentNode.remove();
+            rfRefreshSaveState();
+        }
+
+        function rfAddStep(description) {
+            var box = document.getElementById('rfSteps');
+            if (!box) return;
+            var row = document.createElement('div');
+            row.className = 'rf-step-row';
+            row.innerHTML = '<span class="rf-step-num"></span>' +
+                '<textarea class="rf-step-text" rows="2" maxlength="3000" placeholder="Описание шага"></textarea>' +
+                '<button type="button" class="rf-del-btn" onclick="rfRemoveStep(this)" title="Удалить шаг">✕</button>';
+            row.querySelector('.rf-step-text').value = description || '';
+            box.appendChild(row);
+            rfRenumberSteps();
+            rfRefreshSaveState();
+        }
+
+        function rfRemoveStep(btn) {
+            btn.parentNode.remove();
+            rfRenumberSteps();
+            rfRefreshSaveState();
+        }
+
+        function rfRenumberSteps() {
+            var rows = document.querySelectorAll('#rfSteps .rf-step-row');
+            rows.forEach(function (row, i) {
+                row.querySelector('.rf-step-num').textContent = (i + 1) + '.';
+            });
+        }
+
+        // Снимок формы: единый сборщик для сравнения с префиллом и для payload
+        function rfCollectForm() {
+            var ingredients = [];
+            document.querySelectorAll('#rfIngredients .rf-ing-row').forEach(function (row) {
+                var name = row.querySelector('.rf-ing-name').value.trim();
+                if (!name) return;
+                ingredients.push({ name: name, amount: row.querySelector('.rf-ing-amount').value.trim() });
+            });
+            var steps = [];
+            document.querySelectorAll('#rfSteps .rf-step-text').forEach(function (el) {
+                var text = el.value.trim();
+                if (text) steps.push(text);
+            });
+            return {
+                title: (document.getElementById('rfTitle').value || '').trim(),
+                // сырая строка: «2» и «02» считаем разными правками, но валидация разберёт это ниже
+                servings: document.getElementById('rfServings').value,
+                isBreakfast: document.getElementById('rfBreakfast').checked,
+                isLunch: document.getElementById('rfLunch').checked,
+                isDinner: document.getElementById('rfDinner').checked,
+                isSnack: document.getElementById('rfSnack').checked,
+                ingredients: ingredients,
+                steps: steps
+            };
+        }
+
+        function rfFormSignature() {
+            var f = rfCollectForm();
+            return JSON.stringify([f.title, f.servings, f.isBreakfast, f.isLunch, f.isDinner, f.isSnack, f.ingredients, f.steps]);
+        }
+
+        // «Сохранить» активна, только пока форма отличается от загруженного состояния
+        function rfRefreshSaveState() {
+            recipeFormDirty = rfFormSignature() !== recipeFormBaseline;
+            document.querySelectorAll('.rf-save-btn').forEach(function (b) {
+                b.disabled = !recipeFormDirty || recipeFormSaving;
+            });
+        }
+
+        // Заполнение формы после рендера: префилл при редактировании, пустые строки при создании
+        function rfAfterRender(data) {
+            var titleEl = document.getElementById('rfTitle');
+            if (data) {
+                titleEl.value = data.title || '';
+                (data.ingredients || []).forEach(function (i) { rfAddIngredient(i.name, i.amount); });
+                if (!(data.ingredients || []).length) rfAddIngredient();
+                (data.steps || []).forEach(function (s) { rfAddStep(s.description); });
+                if (!(data.steps || []).length) rfAddStep();
+            } else {
+                rfAddIngredient();
+                rfAddStep();
+            }
+            rfRenumberSteps();
+            if (titleEl) titleEl.focus();
+
+            // Базовый снимок = состояние после префилла; дальше ловим правки делегированием
+            recipeFormBaseline = rfFormSignature();
+            var formEl = document.getElementById('rfForm');
+            if (formEl) {
+                formEl.addEventListener('input', rfRefreshSaveState);
+                formEl.addEventListener('change', rfRefreshSaveState);
+            }
+            rfRefreshSaveState();
+        }
+
+        function cancelRecipeForm() {
+            recipeFormId = null;
+            if (recipeFormFrom === 'recipe' && recipeViewState.id) {
+                // Возврат на страницу рецепта — view не менялся, просто перерисовываем
+                renderResults(renderRecipeHtml(recipeViewState.recipe));
+            } else {
+                goBack();
+            }
+        }
+
+        // Разбор тела ошибки валидации (ValidationProblemDetails) в читаемые строки
+        async function rfErrorMessage(r) {
+            try {
+                var body = await r.text();
+                try {
+                    var j = JSON.parse(body);
+                    var msgs = [];
+                    if (j.errors) {
+                        for (var key in j.errors) msgs = msgs.concat(j.errors[key]);
+                    }
+                    if (msgs.length) return msgs.join('\n');
+                    if (j.detail) return j.detail;
+                    if (j.title) return j.title;
+                } catch (e) { }
+                return body || r.statusText;
+            } catch (e) {
+                return r.statusText;
+            }
+        }
+
+        async function saveRecipeForm() {
+            if (recipeFormSaving || !recipeFormDirty) return;
+
+            var form = rfCollectForm();
+            if (!form.title) {
+                alert('Укажите название рецепта');
+                document.getElementById('rfTitle').focus();
+                return;
+            }
+
+            var servings = parseInt(form.servings, 10);
+            if (isNaN(servings) || servings < 1 || servings > 20) {
+                alert('Число порций должно быть от 1 до 20');
+                return;
+            }
+
+            if (!form.ingredients.length) { alert('Добавьте хотя бы один ингредиент'); return; }
+            if (!form.steps.length) { alert('Добавьте хотя бы один шаг'); return; }
+
+            var payload = {
+                title: form.title,
+                servings: servings,
+                isBreakfast: form.isBreakfast,
+                isLunch: form.isLunch,
+                isDinner: form.isDinner,
+                isSnack: form.isSnack,
+                ingredients: form.ingredients,
+                steps: form.steps.map(function (text, i) { return { number: i + 1, description: text }; })
+            };
+
+            var isEdit = recipeFormId !== null && recipeFormId !== '';
+            // Кнопок сохранения две (вверх справа и внизу) — глушим обе
+            var saveBtns = document.querySelectorAll('.rf-save-btn');
+            saveBtns.forEach(function (b) { b.disabled = true; });
+            recipeFormSaving = true;
+            showLoading();
+
+            try {
+                var r = await fetch(isEdit ? '/api/recipes/' + recipeFormId : '/api/recipes', {
+                    method: isEdit ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!r.ok) throw new Error(await rfErrorMessage(r));
+                var data = await r.json();
+
+                recipeFormId = null;
+                recipeFormSaving = false;
+                recipeFormDirty = false;
+                hideLoading();
+
+                if (isEdit) {
+                    // Перезагрузка с текущим целевым числом порций: суммы и виджет консистентны,
+                    // снапшот списка (previousStateHtml) не перезаписывается — activeRecipeId задан
+                    showRecipe(data.id, recipeViewState.portions);
+                } else {
+                    // Подавляем снапшот формы в showRecipe — «←» должен вести на список
+                    activeRecipeId = data.id;
+                    showRecipe(data.id);
+                }
+            } catch (e) {
+                hideLoading();
+                rfRefreshSaveState(); // кнопки возвращаются в состояние «есть несохранённые правки»
+                recipeFormSaving = false;
+                alert('Не удалось сохранить рецепт:\n' + e.message);
             }
         }
 
@@ -994,6 +1384,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             } else {
                 html += `<button class="icon-btn" onclick="switchMode('recipes', document.getElementById('mode-recipes'))" title="Ко всем рецептам">🗂️</button>`;
             }
+            html += `<button class="icon-btn" onclick="openRecipeForm('${recipe.id}')" title="Редактировать">✏️</button>`;
             html += `<button class="icon-btn" onclick="exportToObsidian('${recipe.id}')" title="Сохранить в Obsidian"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M19.355 18.538a68.967 68.959 0 0 0 1.858-2.954.81.81 0 0 0-.062-.9c-.516-.685-1.504-2.075-2.042-3.362-.553-1.321-.636-3.375-.64-4.377a1.707 1.707 0 0 0-.358-1.05l-3.198-4.064a3.744 3.744 0 0 1-.076.543c-.106.503-.307 1.004-.536 1.5-.134.29-.29.6-.446.914l-.31.626c-.516 1.068-.997 2.227-1.132 3.59-.124 1.26.046 2.73.815 4.481.128.011.257.025.386.044a6.363 6.363 0 0 1 3.326 1.505c.916.79 1.744 1.922 2.415 3.5zM8.199 22.569c.073.012.146.02.22.02.78.024 2.095.092 3.16.29.87.16 2.593.64 4.01 1.055 1.083.316 2.198-.548 2.355-1.664.114-.814.33-1.735.725-2.58l-.01.005c-.67-1.87-1.522-3.078-2.416-3.849a5.295 5.295 0 0 0-2.778-1.257c-1.54-.216-2.952.19-3.84.45.532 2.218.368 4.829-1.425 7.531zM5.533 9.938c-.023.1-.056.197-.098.29L2.82 16.059a1.602 1.602 0 0 0 .313 1.772l4.116 4.24c2.103-3.101 1.796-6.02.836-8.3-.728-1.73-1.832-3.081-2.55-3.831zM9.32 14.01c.615-.183 1.606-.465 2.745-.534-.683-1.725-.848-3.233-.716-4.577.154-1.552.7-2.847 1.235-3.95.113-.235.223-.454.328-.664.149-.297.288-.577.419-.86.217-.47.379-.885.46-1.27.08-.38.08-.72-.014-1.043-.095-.325-.297-.675-.68-1.06a1.6 1.6 0 0 0-1.475.36l-4.95 4.452a1.602 1.602 0 0 0-.513.952l-.427 2.83c.672.59 2.328 2.316 3.335 4.711.09.21.175.43.253.653z"/></svg></button>`;
             html += `<button class="icon-btn" id="copyMdBtn" onclick="copyRecipeText('${recipe.id}')" title="Скопировать текст">📋</button>`;
             html += '</div>';
@@ -1334,6 +1725,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
 
             if (activeRecipeId === null) {
                 previousStateHtml = document.getElementById('resultsContainer').innerHTML;
+                previousStateKind = (currentMode === 'recipes') ? 'recipes' : null;
             }
 
             hideResults();
