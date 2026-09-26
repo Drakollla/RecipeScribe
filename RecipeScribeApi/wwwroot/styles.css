@@ -367,6 +367,327 @@
             color: var(--text-main);
         }
 
+        /* Вкладка «Мои рецепты»: сайдбар-фильтр приёма пищи + список */
+        .recipes-layout {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .recipes-sidebar {
+            flex: 0 0 170px;
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 12px;
+        }
+
+        .recipes-sidebar-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin: 0 0 8px 6px;
+        }
+
+        .meal-radio {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 8px;
+            border-radius: 9px;
+            cursor: pointer;
+            transition: background-color 0.15s ease;
+            font-size: 13.5px;
+            color: var(--text-main);
+        }
+
+            .meal-radio:hover {
+                background-color: rgba(255, 255, 255, 0.04);
+            }
+
+            .meal-radio input {
+                margin: 0;
+                accent-color: var(--accent-color);
+                cursor: pointer;
+            }
+
+            .meal-radio:has(input:checked) {
+                background-color: var(--accent-glass);
+            }
+
+            .meal-radio-label {
+                flex: 1;
+                text-align: left;
+            }
+
+        .meal-count {
+            font-size: 12px;
+            color: var(--text-muted);
+            background-color: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 1px 7px;
+            min-width: 18px;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        .recipes-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .recipe-item-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .recipe-item-open,
+        .recipe-item-delete {
+            cursor: pointer;
+            font-size: 16px;
+            color: var(--text-muted);
+        }
+
+        .recipe-item-delete {
+            color: #f44336;
+            opacity: 0.6;
+        }
+
+        @media (max-width: 640px) {
+            .recipes-layout {
+                flex-direction: column;
+            }
+
+            .recipes-sidebar {
+                flex: none;
+                width: 100%;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 4px;
+            }
+
+                .recipes-sidebar-title {
+                    width: 100%;
+                    margin-bottom: 2px;
+                }
+
+                .meal-radio {
+                    flex: 1 1 auto;
+                }
+        }
+
+        /* Шапка вкладки «Мои рецепты» с кнопкой создания */
+        .recipes-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+            .recipes-header h2 {
+                margin-bottom: 0;
+            }
+
+        .recipes-new-btn {
+            flex-shrink: 0;
+        }
+
+        /* Форма создания/редактирования рецепта */
+        .recipe-form {
+            max-width: 640px;
+            margin: 12px auto 0;
+            text-align: left;
+        }
+
+            .recipe-form h3 {
+                margin: 22px 0 8px;
+            }
+
+        .rf-field {
+            display: block;
+            margin: 16px 0 6px;
+            color: var(--text-muted);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+            .recipe-form .rf-field input {
+                display: block;
+                width: 100%;
+                margin-top: 6px;
+                padding: 10px 14px;
+                border: 1px solid var(--border-color);
+                border-radius: 10px;
+                background: var(--card-bg);
+                color: var(--text-main);
+                font-size: 15px;
+                outline: none;
+                box-sizing: border-box;
+            }
+
+                .recipe-form .rf-field input:focus {
+                    border-color: var(--accent-color);
+                }
+
+        .rf-row {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+
+        .rf-servings {
+            width: 110px;
+            flex-shrink: 0;
+        }
+
+        .rf-meals {
+            flex: 1;
+            min-width: 240px;
+            margin: 16px 0 0;
+            padding: 10px 12px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+        }
+
+            .rf-meals legend {
+                padding: 0 6px;
+                color: var(--text-muted);
+                font-size: 13px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+
+        .rf-check {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin: 4px 14px 0 0;
+            color: var(--text-main);
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+            .rf-check input {
+                margin: 0;
+                accent-color: var(--accent-color);
+                cursor: pointer;
+            }
+
+        .rf-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .rf-ing-row {
+            display: flex;
+            gap: 8px;
+        }
+
+            .rf-ing-row input {
+                padding: 9px 12px;
+                border: 1px solid var(--border-color);
+                border-radius: 10px;
+                background: var(--card-bg);
+                color: var(--text-main);
+                font-size: 14px;
+                outline: none;
+                box-sizing: border-box;
+            }
+
+            .rf-ing-row input:focus {
+                border-color: var(--accent-color);
+            }
+
+            .rf-ing-row .rf-ing-name {
+                flex: 1.2;
+                min-width: 0;
+            }
+
+            .rf-ing-row .rf-ing-amount {
+                flex: 1;
+                min-width: 0;
+            }
+
+        .rf-step-row {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+        }
+
+        .rf-step-num {
+            flex: 0 0 24px;
+            padding-top: 9px;
+            color: var(--text-muted);
+            font-size: 14px;
+            text-align: right;
+        }
+
+        .rf-step-text {
+            flex: 1;
+            min-width: 0;
+            padding: 9px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: var(--card-bg);
+            color: var(--text-main);
+            font-size: 14px;
+            font-family: inherit;
+            outline: none;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+
+            .rf-step-text:focus {
+                border-color: var(--accent-color);
+            }
+
+        .rf-del-btn {
+            flex: 0 0 34px;
+            height: 38px;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+            .rf-del-btn:hover {
+                border-color: #f44336;
+                color: #f44336;
+            }
+
+        .rf-add-btn {
+            margin-top: 10px;
+            padding: 8px 14px;
+            border: 1px dashed var(--border-color);
+            border-radius: 10px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 13.5px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+            .rf-add-btn:hover {
+                border-color: var(--accent-color);
+                color: var(--accent-color);
+            }
+
+        .rf-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 26px;
+        }
+
         /* Сетка КБЖУ */
         .nutrition-grid {
             display: grid;
@@ -435,6 +756,20 @@
             display: flex;
             gap: 8px;
             margin-bottom: 14px;
+        }
+
+        /* Форма рецепта: отмена слева, сохранение справа; панель липнет при прокрутке */
+        .rf-topbar {
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            background: var(--card-bg);
+        }
+
+        .rf-save-top {
+            padding: 8px 16px;
         }
 
         .icon-btn {

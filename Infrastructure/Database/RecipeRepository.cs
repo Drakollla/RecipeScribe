@@ -63,13 +63,35 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
             .ToList();
     }
 
-    public async Task<Recipe?> GetRecipeByIdAsync(Guid id)
+    public async Task<Recipe?> GetRecipeByIdAsync(Guid id, bool trackChanges = false)
     {
-        return await FindByCondition(r => r.Id == id, trackChanges: false)
+        return await FindByCondition(r => r.Id == id, trackChanges: trackChanges)
             .AsSplitQuery()
             .Include(r => r.Ingredients)
             .Include(r => r.Steps)
             .FirstOrDefaultAsync();
+    }
+
+    public async Task UpdateRecipeAsync(Recipe recipe, List<Ingredient> ingredients, List<RecipeStep> steps)
+    {
+        Context.Ingredients.RemoveRange(recipe.Ingredients);
+        Context.Steps.RemoveRange(recipe.Steps);
+        recipe.Ingredients.Clear();
+        recipe.Steps.Clear();
+
+        foreach (var ingredient in ingredients)
+        {
+            ingredient.Recipe = recipe;
+            await Context.Ingredients.AddAsync(ingredient);
+        }
+
+        foreach (var step in steps)
+        {
+            step.Recipe = recipe;
+            Context.Steps.Add(step);
+        }
+
+        await SaveAsync();
     }
 
     public async Task<List<Recipe>> GetVariantsAsync(Guid sourceId)
