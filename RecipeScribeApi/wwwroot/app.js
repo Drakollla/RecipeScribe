@@ -2,10 +2,7 @@
         let portions = 2;
         let activeRecipeId = null;
         let previousStateHtml = null;
-        // Что именно лежит в previousStateHtml: 'recipes' — вкладка «Мои рецепты» (её дешевле
-        // перерисовать из свежего /api/recipes, чем отдавать устаревший снапшот), иначе null
-        let previousStateKind = null;
-        let recipeViewState = { id: null, recipe: null, portions: 1, ingredients: [], steps: [], variants: [], sourceRecipe: null, sourceId: null, variantTitle: null, menuItemId: null, modified: false };
+        let recipeViewState = { id: null, recipe: null, portions: 1, ingredients: [], steps: [], variants: [], sourceRecipe: null, sourceId: null, variantTitle: null, menuItemId: null, modified: false, rescaleMode: false, constraints: {}, rescaleTimer: null, rescaleSeq: 0, rescaleError: null };
         let currentRecipeObj = null;
         let menuViewState = {};
         let currentPlan = null;
@@ -32,19 +29,29 @@
         function buildIngredientItems(ingredients, flash) {
             var html = '';
             ingredients.forEach(function (i) {
-                var cls = flash ? ' class="amount-flash"' : '';
                 var name = escapeHtml(i.name);
-                html += '<li>' +
+                var amountHtml = '';
+                if (i.amount) {
+                    var acls = flash ? ' amount-flash' : '';
+                    amountHtml = ' — <strong class="amount-val' + acls + '">' + escapeHtml(i.amount) + '</strong>';
+                }
+                var html2 = '<li>' +
                     '<span class="ingredient-link" data-recipe="' + recipeViewState.id + '" data-ingredient="' + name + '" onclick="substituteIngredient(this)">' + name + '</span>' +
-                    (i.amount ? ' — <strong' + cls + '>' + i.amount + '</strong>' : '') +
-                    '</li>';
+                    '<span class="ingredient-amount">' + amountHtml + '</span>';
+                if (recipeViewState.rescaleMode) {
+                    var rescaleKey = i.originalName || i.name;
+                    var have = recipeViewState.constraints[rescaleKey];
+                    html2 += '<span class="ingredient-have"> у меня есть: <input type="text" inputmode="decimal" class="ingredient-have-input" data-ingredient="' + name + '" data-rescale-key="' + escapeHtml(rescaleKey) + '" value="' + (have != null ? have : '') + '" oninput="onIngredientHave(this)"></span>';
+                }
+                html2 += '</li>';
+                html += html2;
             });
             return html;
         }
 
         // Изменение целевого числа порций (без пересчёта — только число)
         function recipePortionsChange(delta) {
-            if (!recipeViewState.id) return;
+            if (!recipeViewState.id || recipeViewState.rescaleMode) return;
             var next = Math.max(1, Math.min(20, recipeViewState.portions + delta));
             if (next === recipeViewState.portions) return;
 
@@ -61,8 +68,130 @@
 
         // Пересчёт ингредиентов через LLM (для яиц/специй и т.п.)
         async function llmRescale() {
-            if (!recipeViewState.id) return;
+            if (!recipeViewState.id || recipeViewState.rescaleMode) return;
             await showRecipe(recipeViewState.id, recipeViewState.portions);
+        }
+
+        // ---- Режим пересчёта по ингредиенту («у меня есть …») ----
+        // Выключение ⚖️ только прячет поля: пересчитанные количества остаются
+        // (сброс — явно, через «↺ Сбросить» или при уходе со страницы).
+        function toggleRescaleMode() {
+            recipeViewState.rescaleMode = !recipeViewState.rescaleMode;
+            if (recipeViewState.rescaleMode) recipeViewState.rescaleError = null;
+            rerenderRecipeCard();
+        }
+
+        // Очистка ограничений и возврат исходных количеств (режим остаётся включённым)
+        function clearIngredientRescale() {
+            if (recipeViewState.rescaleTimer) clearTimeout(recipeViewState.rescaleTimer);
+            recipeViewState.rescaleTimer = null;
+            recipeViewState.constraints = {};
+            recipeViewState.rescaleError = null;
+            recipeViewState.rescaleSeq = (recipeViewState.rescaleSeq || 0) + 1;
+            restoreOriginalIngredients();
+            rerenderRecipeCard();
+        }
+
+        // Оригинальные количества из загруженного рецепта + повторное применение
+        // клиентских замен имён (rescale-ответ приходит с именами из БД)
+        function restoreOriginalIngredients() {
+            var base = (recipeViewState.recipe && recipeViewState.recipe.ingredients) ? recipeViewState.recipe.ingredients : [];
+            var list = base.map(function (i) {
+                return { name: i.name, amount: i.amount, originalName: i.originalName };
+            });
+            applySubstitutionsToList(list);
+            recipeViewState.ingredients = list;
+        }
+
+        function applySubstitutionsToList(list) {
+            var subs = recipeViewState.substitutions || [];
+            subs.forEach(function (sub) {
+                list.forEach(function (ing) {
+                    if (ing.name === sub.original) {
+                        if (!ing.originalName) ing.originalName = sub.original;
+                        ing.name = sub.replacement;
+                    }
+                });
+            });
+        }
+
+        function onIngredientHave(input) {
+            var name = input.getAttribute('data-rescale-key') || input.getAttribute('data-ingredient');
+            var raw = (input.value || '').trim().replace(',', '.');
+            var v = parseFloat(raw);
+            if (!isFinite(v) || v <= 0) delete recipeViewState.constraints[name];
+            else recipeViewState.constraints[name] = v;
+
+            if (recipeViewState.rescaleTimer) clearTimeout(recipeViewState.rescaleTimer);
+            recipeViewState.rescaleTimer = setTimeout(runIngredientRescale, 300);
+        }
+
+        async function runIngredientRescale() {
+            if (!recipeViewState.id || !recipeViewState.rescaleMode) return;
+
+            var names = Object.keys(recipeViewState.constraints || {});
+            if (!names.length) {
+                recipeViewState.rescaleError = null;
+                restoreOriginalIngredients();
+                updateIngredientAmountsDom();
+                updateRescaleHintDom();
+                return;
+            }
+
+            var seq = (recipeViewState.rescaleSeq = (recipeViewState.rescaleSeq || 0) + 1);
+            try {
+                var r = await fetch('/api/recipes/' + recipeViewState.id + '/rescale', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        constraints: names.map(function (n) {
+                            return { ingredient: n, available: recipeViewState.constraints[n] };
+                        })
+                    })
+                });
+                if (!r.ok) throw new Error(await extractError(r));
+                var data = await r.json();
+                if (seq !== recipeViewState.rescaleSeq) return;
+
+                var ings = data.ingredients || [];
+                applySubstitutionsToList(ings);
+                recipeViewState.ingredients = ings;
+                recipeViewState.rescaleError = null;
+                updateIngredientAmountsDom();
+                updateRescaleHintDom();
+            } catch (e) {
+                if (seq !== recipeViewState.rescaleSeq) return;
+                recipeViewState.rescaleError = e.message || 'Не удалось пересчитать';
+                updateRescaleHintDom();
+            }
+        }
+
+        // Точечное обновление сумм (без rerender — иначе теряется фокус в поле ввода)
+        function updateIngredientAmountsDom() {
+            var items = document.querySelectorAll('#recipeIngredientsList > li');
+            var ings = recipeViewState.ingredients || [];
+            for (var idx = 0; idx < items.length; idx++) {
+                var span = items[idx].querySelector('.ingredient-amount');
+                if (!span) continue;
+                var amount = ings[idx] ? (ings[idx].amount || '') : '';
+                span.innerHTML = amount
+                    ? ' — <strong class="amount-val">' + escapeHtml(amount) + '</strong>'
+                    : '';
+            }
+        }
+
+        function rescaleHintHtml() {
+            var t = 'Укажите «у меня есть» у нужного ингредиента';
+            if (recipeViewState.rescaleError) {
+                t += ' · <span class="rescale-error">' + escapeHtml(recipeViewState.rescaleError) + '</span>';
+            }
+            t += ' <button class="portion-btn" onclick="clearIngredientRescale()" title="Сбросить пересчёт">↺ Сбросить</button>';
+            return t;
+        }
+
+        function updateRescaleHintDom() {
+            var el = document.getElementById('rescaleHint');
+            if (el) el.innerHTML = rescaleHintHtml();
         }
 
         // Переключение рецепта в меню на вариант той же группы (PATCH item recipeId)
@@ -119,6 +248,12 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             recipeViewState.modified = false;
             recipeViewState.substitutions = [];
             recipeViewState.savingVariant = false;
+            if (recipeViewState.rescaleTimer) clearTimeout(recipeViewState.rescaleTimer);
+            recipeViewState.rescaleTimer = null;
+            recipeViewState.rescaleMode = false;
+            recipeViewState.constraints = {};
+            recipeViewState.rescaleError = null;
+            recipeViewState.rescaleSeq = (recipeViewState.rescaleSeq || 0) + 1;
         }
 
         // Переключение на редакцию рецепта по чипу
@@ -1389,7 +1524,7 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             html += `<button class="icon-btn" id="copyMdBtn" onclick="copyRecipeText('${recipe.id}')" title="Скопировать текст">📋</button>`;
             html += '</div>';
 
-            // Помечено как изменённый рецепт — баннер с кнопкой «Сохранить как вариант»
+            // Помечено как изменённый рецепт (только замены ингредиентов) — баннер с кнопкой «Сохранить как вариант»
             if (recipeViewState.modified && !recipeViewState.sourceId) {
                 html += '<div class="recipe-modified-banner">' +
                     '<span>✏️ Рецепт изменён</span>' +
@@ -1409,16 +1544,21 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
                 html += '</div>';
             }
 
+            var dis = recipeViewState.rescaleMode ? ' disabled' : '';
             html += '<div class="recipe-ingredients-header">' +
                 '<h3>Ингредиенты</h3>' +
                 '<div class="recipe-portions-widget" title="Пересчитать количество ингредиентов">' +
                 '<span>🍽️</span>' +
-                '<button class="portion-btn" onclick="recipePortionsChange(-1)">−</button>' +
+                '<button class="portion-btn"' + dis + ' onclick="recipePortionsChange(-1)">−</button>' +
                 '<span class="recipe-portions-value" id="recipePortionsVal">' + recipeViewState.portions + '</span>' +
-                '<button class="portion-btn" onclick="recipePortionsChange(1)">+</button>' +
-                '<button class="portion-btn recipe-recalc-btn" onclick="llmRescale()" title="Пересчитать ингредиенты">↻</button>' +
+                '<button class="portion-btn"' + dis + ' onclick="recipePortionsChange(1)">+</button>' +
+                '<button class="portion-btn recipe-recalc-btn"' + dis + ' onclick="llmRescale()" title="Пересчитать ингредиенты">↻</button>' +
+                '<button class="portion-btn rescale-toggle-btn' + (recipeViewState.rescaleMode ? ' active' : '') + '" onclick="toggleRescaleMode()" title="Пересчитать по имеющему ингредиенту">⚖️</button>' +
                 '</div>' +
                 '</div>';
+            if (recipeViewState.rescaleMode) {
+                html += '<div class="rescale-hint" id="rescaleHint">' + rescaleHintHtml() + '</div>';
+            }
             html += '<ul id="recipeIngredientsList">' + buildIngredientItems(recipeViewState.ingredients, false) + '</ul>';
 
             if (recipe.nutrition) {
@@ -1771,16 +1911,61 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
             }
         }
 
+        // Сборка текста рецепта из текущего view-состояния (замены/пересчёт), не из БД.
+        // Формат повторяет RecipeTextBuilder.
+        function buildRecipeTextFromView() {
+            var rec = recipeViewState.recipe;
+            if (!rec) return null;
+
+            var lines = [];
+            var header = '🍽 ' + (rec.title || '');
+            var servings = recipeViewState.portions || rec.servings;
+            if (servings > 0) header += ' (на ' + servings + ' порций)';
+            lines.push(header);
+            lines.push('');
+            lines.push('🥣 Ингредиенты:');
+            (recipeViewState.ingredients || []).forEach(function (i) {
+                var amount = (i.amount && String(i.amount).trim()) ? ' — ' + i.amount : '';
+                lines.push('• ' + i.name + amount);
+            });
+
+            var tips = rec.preparationTips || [];
+            if (tips.length) {
+                lines.push('');
+                lines.push('💡 Советы по подготовке:');
+                tips.forEach(function (t) {
+                    lines.push('• ' + t.ingredient + ': ' + t.tip);
+                });
+            }
+
+            lines.push('');
+            lines.push('👨‍🍳 Шаги приготовления:');
+            var steps = (recipeViewState.steps && recipeViewState.steps.length) ? recipeViewState.steps : (rec.steps || []);
+            steps.forEach(function (s) {
+                lines.push(s.number + '. ' + s.description);
+            });
+
+            return lines.join('\n');
+        }
+
         async function copyRecipeText(id) {
-            showLoading();
             try {
-                const r = await fetch(`/api/recipes/${id}/text`);
-                if (!r.ok) throw new Error('Не удалось получить текст рецепта');
-                await copyTextToClipboard(await r.text(), 'copyMdBtn');
+                var text = null;
+                if (recipeViewState.recipe && String(recipeViewState.id) === String(id)) {
+                    text = buildRecipeTextFromView();
+                } else {
+                    showLoading();
+                    try {
+                        const r = await fetch(`/api/recipes/${id}/text`);
+                        if (!r.ok) throw new Error('Не удалось получить текст рецепта');
+                        text = await r.text();
+                    } finally {
+                        hideLoading();
+                    }
+                }
+                await copyTextToClipboard(text, 'copyMdBtn');
             } catch (e) {
                 alert('Ошибка: ' + e.message);
-            } finally {
-                hideLoading();
             }
         }
 
