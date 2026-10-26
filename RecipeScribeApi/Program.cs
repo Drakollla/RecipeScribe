@@ -35,20 +35,13 @@ try
     var app = builder.Build();
 
     app.UseSerilogRequestLogging();
-    app.UseMiddleware<RateLimitingMiddleware>();
     app.UseMiddleware<ExceptionHandlingMiddleware>();  
     
     app.UseCors("AllowAll");
     app.UseDefaultFiles();
     app.UseStaticFiles();
 
-    //app.UseSwagger();
-    //app.UseSwaggerUI();
-
     app.MapControllers();
-
-    //app.MapFallbackToFile("index.html");
-
     app.Run();
 }
 catch (Exception ex) when (ex is not HostAbortedException)
