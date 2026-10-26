@@ -18,6 +18,16 @@ try
         .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
         .AddUserSecrets<Program>();
 
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("AllowAll", policy =>
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        });
+    });
+
     builder.Services.AddInfrastructureServices(builder.Configuration);
     builder.Services.AddControllers();
     builder.Services.AddApiServices();
@@ -25,7 +35,10 @@ try
     var app = builder.Build();
 
     app.UseSerilogRequestLogging();
-    app.UseMiddleware<ExceptionHandlingMiddleware>();
+    app.UseMiddleware<RateLimitingMiddleware>();
+    app.UseMiddleware<ExceptionHandlingMiddleware>();  
+    
+    app.UseCors("AllowAll");
     app.UseDefaultFiles();
     app.UseStaticFiles();
 
@@ -33,6 +46,8 @@ try
     //app.UseSwaggerUI();
 
     app.MapControllers();
+
+    //app.MapFallbackToFile("index.html");
 
     app.Run();
 }
