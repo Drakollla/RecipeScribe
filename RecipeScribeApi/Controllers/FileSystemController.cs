@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Shared.DTOs;
 
 namespace RecipeScribeApi.Controllers;
 
@@ -13,10 +14,10 @@ public class FileSystemController : ControllerBase
             return Ok(new { current = "", dirs = GetDrives() });
 
         if (!Path.IsPathRooted(path))
-            return BadRequest(new { error = "Invalid path." });
+            return BadRequest(new ErrorDto("Invalid path."));
 
         if (!Directory.Exists(path))
-            return BadRequest(new { error = "Directory not found." });
+            return BadRequest(new ErrorDto("Directory not found."));
 
         try
         {

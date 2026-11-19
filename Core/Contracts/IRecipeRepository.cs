@@ -12,5 +12,5 @@ public interface IRecipeRepository
     Task<List<Recipe>> GetVariantsAsync(Guid sourceId);
     Task<Recipe?> GetSourceAsync(Guid id);
     Task<List<Recipe>> GetRecipesByUrlAsync(string url);
-    Task DeleteRecipeAsync(Guid id);
+    Task<bool> DeleteRecipeAsync(Guid id);
 }

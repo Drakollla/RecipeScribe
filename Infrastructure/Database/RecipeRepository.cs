@@ -132,13 +132,13 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
             .ToListAsync();
     }
 
-    public async Task DeleteRecipeAsync(Guid id)
+    public async Task<bool> DeleteRecipeAsync(Guid id)
     {
         var recipe = await FindByCondition(r => r.Id == id, trackChanges: true)
             .FirstOrDefaultAsync();
 
         if (recipe == null)
-            return;
+            return false;
 
         var idsToDelete = new List<Guid> { recipe.Id };
 
@@ -164,5 +164,7 @@ public class RecipeRepository : RepositoryBase<Recipe>, IRecipeRepository
         }
 
         await SaveAsync();
+
+        return true;
     }
 }

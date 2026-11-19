@@ -2,7 +2,6 @@
 using Core.Enums;
 using Core.Exceptions;
 using Core.Models;
-using Core.ValueObjects;
 using Infrastructure.Settings;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
@@ -72,6 +71,7 @@ public class MealPlannerService : IMealPlannerService
         foreach (var mealType in mealTypes)
         {
             var recipe = await _repo.GetRecipeByMealTypeAsync(mealType, selectedIds);
+
             if (recipe != null)
             {
                 selectedIds.Add(recipe.Id);

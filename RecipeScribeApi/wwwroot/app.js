@@ -2285,8 +2285,13 @@ function prepareRecipeView(recipe, portionsOverride, menuItemId) {
         // Безопасное извлечение ошибки из ответа сервера
         async function extractError(r) {
             if (r.status === 429) return 'Слишком много запросов. Попробуйте через 30 секунд.';
-            try { return (await r.text()) || r.statusText; }
-            catch { return r.statusText; }
+            var text = await r.text();
+            try {
+                var data = JSON.parse(text);
+                return data.error || data.message || data.detail || r.statusText;
+            } catch {
+                return text || r.statusText;
+            }
         }
 
         function clearInput() {
